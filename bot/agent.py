@@ -35,7 +35,7 @@ class Agent:
         if step == 0:
             # Declare faction
             actions["faction"] = self.faction_names[self.player]
-            actions["bid"] = -100  # Learnable
+            actions["bid"] = 5  # Learnable
         else:
             # Factory placement period
             # optionally convert observations to python objects with utility functions
