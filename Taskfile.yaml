@@ -1,0 +1,22 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  BOT_COPIES: "bot_copies"
+
+tasks:
+  backup:
+    cmds:
+      - mkdir -p  {{.BOT_COPIES}}/{{.CLI_ARGS}}
+      - cp -r `ls | grep -vE 'env|bot_copies|json|tar\.gz'` {{.BOT_COPIES}}/{{.CLI_ARGS}}
+
+  submission:
+    cmds:
+      - tar -vc --exclude-vcs-ignores --exclude-vcs --exclude submission.tar.gz --exclude Taskfile.yaml -zf submission.tar.gz .
+
+  run:
+    variables:
+      AGAINST: "orig"
+    cmds:
+      - luxai-s2 main.py bot_copies/{{.AGAINST}}/main.py -v 2 -s 101 -o replay.html >log.log
