@@ -6,8 +6,12 @@ import numpy as np
 import networkx as nx
 
 import sys
+import os
 from functools import partial
-print = partial(print, file=sys.stderr)
+if os.environ.get("DEBUG_AGENT"):
+    print = partial(print, file=sys.stderr)
+else:
+    print = lambda *args: None
 
 
 class Agent:
