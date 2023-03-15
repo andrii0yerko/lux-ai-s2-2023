@@ -9,14 +9,14 @@ tasks:
   backup:
     cmds:
       - mkdir -p  {{.BOT_COPIES}}/{{.CLI_ARGS}}
-      - cp -r `ls | grep -vE 'env|bot_copies|json|tar\.gz'` {{.BOT_COPIES}}/{{.CLI_ARGS}}
+      - cp -r `ls src | grep -vE 'env|bot_copies|json|tar\.gz'` {{.BOT_COPIES}}/{{.CLI_ARGS}}
 
   submission:
     cmds:
-      - tar -vc --exclude-vcs-ignores --exclude-vcs --exclude submission.tar.gz --exclude Taskfile.yaml -zf submission.tar.gz .
+      - tar -vc --directory=./src --exclude-ignore=../.gitignore --exclude-vcs --exclude submission.tar.gz --exclude Taskfile.yaml -zf submission.tar.gz .
 
   run:
     variables:
       AGAINST: "orig"
     cmds:
-      - luxai-s2 main.py bot_copies/{{.AGAINST}}/main.py -v 2 -s 101 -o replay.html >log.log
+      - luxai-s2 src/main.py bot_copies/{{.AGAINST}}/main.py -v 2 -s 101 -o replay.html >log.log

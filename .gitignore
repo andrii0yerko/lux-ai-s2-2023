@@ -167,3 +167,4 @@ chromedriver
 *.json
 *.tar.gz
 bot_copies/**
+__pycache__/**

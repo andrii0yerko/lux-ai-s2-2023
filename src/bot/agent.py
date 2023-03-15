@@ -206,6 +206,7 @@ class Agent:
         bot_units = {}
 
         for unit_id, factory in factories.items():
+            print(game_state.real_env_steps, unit_id)
             if unit_id not in self.factory_bots.keys():
                 self.factory_bots[unit_id] = {
                     "ice": [],
@@ -222,7 +223,7 @@ class Agent:
                         self.factory_bots[unit_id][task].remove(bot_unit_id)
 
             minbot_task = None
-            min_bots = {"ice": 1, "ore": 5, "rubble": 5, "kill": 1}
+            min_bots = {"ice": 3, "ore": 5, "rubble": 5, "kill": 1}
             # NO. BOTS PER TASK
             for task in ["kill", "ice", "ore", "rubble"]:
                 num_bots = len(self.factory_bots[unit_id][task]) + sum([task in self.factory_queue[unit_id]])
@@ -264,7 +265,7 @@ class Agent:
             factory_units += [factory]
             factory_ids += [unit_id]
 
-            if factory.can_water(game_state) and step > 900 and factory.cargo.water > (1000 - step) + 100:
+            if factory.can_water(game_state) and step > 800 and factory.cargo.water > (1000 - step) + 100:
                 actions[unit_id] = factory.water()
 
         factory_tiles = np.array(factory_tiles)  # Factory locations (to go back to)
