@@ -36,8 +36,9 @@ class UnitBehaviour:
 
         distances = np.mean((possible_locations - unit.pos) ** 2, 1)
         num_assigned = np.array([num_assigned.get(tuple(pos), 0) for pos in possible_locations])
+        # TODO adjust num_assigned depending of distance to _factory_
 
-        idx = np.argsort(distances + 7 * num_assigned)
+        idx = np.argsort(distances + 2 * num_assigned)
         self.manager.bot_targets[unit.unit_id] = possible_locations[idx][0]
         return possible_locations[idx]
 
@@ -48,6 +49,7 @@ class UnitBehaviour:
         direction = directions[0]
         k = 0
         unit_type = unit.unit_type
+        self.logger.debug(f"get_direction: {direction}")
 
         while self.manager.check_collision(np.array(unit.pos), direction, unit_type) and k < min(len(sorted_tiles) - 1, 500):
             k += 1
@@ -56,17 +58,21 @@ class UnitBehaviour:
             # direction = direction_to(np.array(unit.pos), closest_tile)
             directions = self.manager.shortest_path(unit.pos, closest_tile)
             direction = directions[0]
+            self.logger.debug(f"get_direction change: {direction}")
 
         if self.manager.check_collision(unit.pos, direction, unit_type):
             for direction_x in np.arange(4, -1, -1):
                 if not self.manager.check_collision(np.array(unit.pos), direction_x, unit_type):
                     direction = direction_x
                     directions = [direction]
+                    self.logger.debug(f"get_direction change search: {direction}")
                     break
 
         if self.manager.check_collision(np.array(unit.pos), direction, unit_type):
+            direction = 0
             direction = np.random.choice(np.arange(5))
             directions = [direction]
+            self.logger.debug(f"get_direction change finally: {direction}")
 
         self.logger.info(f"{unit.pos}, {closest_tile}, directions, {directions}")
 
@@ -80,7 +86,7 @@ class UnitBehaviour:
         move_cost = unit.move_cost(game_state, direction)
         # check move_cost is not None, meaning that direction is not blocked
         # check if unit has enough power to move and update the action queue.
-        if move_cost is not None and unit.power >= move_cost + unit.action_queue_cost(game_state):
+        if move_cost is not None:  # and unit.power >= move_cost + unit.action_queue_cost(game_state):
             if len(unit.action_queue) and directions[0] == unit.action_queue[0, 1] and unit.action_queue[0, 0] == 0:
                 self.logger.info("continue queue")
             else:
@@ -130,7 +136,6 @@ class UnitBehaviour:
             sorted_ice = self.assign_to_tile(ice_locations)
             closest_ice = sorted_ice[0]
             # if we have reached the ice tile, start mining if possible
-            self.logger.info(f"ice_loc {ice_locations}")
             if (ice_locations == unit.pos).all(1).any():
                 if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
                     self.actions = [unit.dig(repeat=False)]
@@ -231,6 +236,7 @@ class UnitBehaviour:
         unit = self.unit
 
         self.logger.info(f"{self.unit} current action queue: {self.unit.action_queue}, task: {self.manager.bots.get(unit_id)}")
+        self.logger.info(f"botpos {self.manager.botpos}")
 
         self.closest_factory_tile = self.manager.register_bot(unit_id, unit)
         self.distance_to_factory = np.mean(np.subtract(self.closest_factory_tile, unit.pos) ** 2)

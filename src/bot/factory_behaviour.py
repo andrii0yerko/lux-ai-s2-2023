@@ -8,7 +8,7 @@ from lux.kit import GameState
 
 
 class FactoryBehaviour:
-    min_bots = {"ice": 5, "ore": 5, "rubble": 5, "kill": 1}
+    min_bots = {"ice": 2, "ore": 5, "rubble": 5, "kill": 1}
 
     def __init__(self, factory: Factory, game_state: GameState, manager: StateManager):
         self.factory = factory
