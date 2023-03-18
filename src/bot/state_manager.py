@@ -1,4 +1,5 @@
 from collections import defaultdict
+from typing import NamedTuple
 import networkx as nx
 import numpy as np
 
@@ -6,6 +7,9 @@ from lux.kit import GameState
 from lux.utils import direction_to
 
 
+# TODO
+# This dict + id logic is a mess
+# Use classes and references instead.
 class StateManager:
     move_deltas = np.array([[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0]])
 
@@ -16,14 +20,7 @@ class StateManager:
         self.bots = {}
         self.botpos = []
         self.bot_factory = {}
-        self.factory_bots = defaultdict(
-            lambda: {
-                "ice": [],
-                "ore": [],
-                "rubble": [],
-                "kill": [],
-            }
-        )
+        self.bot_targets = {}
         self.factory_queue = defaultdict(list)
 
     def _build_graph(self, game_state):
@@ -58,16 +55,20 @@ class StateManager:
         new_pos = pos + move_deltas[direction]
 
         if unit_type == "LIGHT":
-            return str(new_pos) in unitpos or str(new_pos) in self.botposheavy.values()
+            return tuple(new_pos) in unitpos or tuple(new_pos) in self.botposheavy.values()
         else:
-            return str(new_pos) in unitpos
+            return tuple(new_pos) in unitpos
 
     def get_factory_bots(self, unit_id):
-        for task in ["ice", "ore", "rubble", "kill"]:
-            for bot_unit_id in self.factory_bots[unit_id][task]:
-                if bot_unit_id not in self.botpos.keys():
-                    self.factory_bots[unit_id][task].remove(bot_unit_id)
-        return self.factory_bots[unit_id]
+        result = defaultdict(list)
+        for bot, factory in self.bot_factory.items():
+            if bot not in self.botpos.keys():
+                continue
+            if factory != unit_id:
+                continue
+            task = self.bots.get(bot)
+            result[task].append(bot)
+        return result
 
     def register_bot(self, unit_id, unit):
         """
@@ -100,7 +101,7 @@ class StateManager:
             if len(self.factory_queue[self.bot_factory[unit_id]]) != 0:
                 task = self.factory_queue[self.bot_factory[unit_id]].pop(0)
             self.bots[unit_id] = task
-            self.factory_bots[self.bot_factory[unit_id]][task].append(unit_id)
+            # self.factory_bots[self.bot_factory[unit_id]][task].append(unit_id)
             # print(self.game_state.real_env_steps, unit_id, "new task", task)
         return self.bots[unit_id]
 
@@ -114,12 +115,14 @@ class StateManager:
         for player in [self.player, self.opp_player]:
             for unit_id, unit in game_state.units[player].items():
                 if player == self.player:
-                    self.botpos[unit_id] = str(unit.pos)
+                    self.botpos[unit_id] = tuple(unit.pos)
                 else:
                     self.opp_botpos.append(unit.pos)
 
                 if unit.unit_type == "HEAVY":
-                    self.botposheavy[unit_id] = str(unit.pos)
+                    self.botposheavy[unit_id] = tuple(unit.pos)
+
+        self.bot_targets = {k: v for k, v in self.bot_targets.items() if k in self.botpos}
 
         factory_tiles = []
         # factory_units = []
