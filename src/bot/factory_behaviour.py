@@ -55,7 +55,7 @@ class FactoryBehaviour:
         preference = "HEAVY"
 
         # check if desired bot type available
-        all_factory_bots = sum(self.robots.values(), start=[])
+        all_factory_bots = [x for v in self.robots.values() for x in v]
 
         heavies = {}
         for x in all_factory_bots:
