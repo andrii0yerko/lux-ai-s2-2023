@@ -12,13 +12,12 @@ from .state_manager import StateManager
 
 
 logger = logging.getLogger()
-logger.setLevel(os.environ.get("LOGLEVEL", "CRITICAL"))
+logger.setLevel(os.environ.get("LOGLEVEL", "CRITICAL"))  # to disable logging on leaderboard
 
-# Create console handler with a different format for the root logger
-root_formatter = logging.Formatter("%(levelname)s - %(message)s")
-root_console_handler = logging.StreamHandler()
-root_console_handler.setFormatter(root_formatter)
-logger.addHandler(root_console_handler)
+formatter = logging.Formatter("%(levelname)s - %(message)s")
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
 
 
 class Agent:

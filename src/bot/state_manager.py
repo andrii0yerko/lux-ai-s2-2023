@@ -1,10 +1,16 @@
 from collections import defaultdict
-from typing import NamedTuple
+from dataclasses import dataclass
 import networkx as nx
 import numpy as np
 
 from lux.kit import GameState
 from lux.utils import direction_to
+
+
+@dataclass
+class RobotTask:
+    task: str
+    action: str = None
 
 
 # TODO
@@ -67,7 +73,7 @@ class StateManager:
             if factory != unit_id:
                 continue
             task = self.bots.get(bot)
-            result[task].append(bot)
+            result[task.task].append(bot)
         return result
 
     def register_bot(self, unit_id, unit):
@@ -100,7 +106,7 @@ class StateManager:
             task = "ice"
             if len(self.factory_queue[self.bot_factory[unit_id]]) != 0:
                 task = self.factory_queue[self.bot_factory[unit_id]].pop(0)
-            self.bots[unit_id] = task
+            self.bots[unit_id] = RobotTask(task)
             # self.factory_bots[self.bot_factory[unit_id]][task].append(unit_id)
             # print(self.game_state.real_env_steps, unit_id, "new task", task)
         return self.bots[unit_id]

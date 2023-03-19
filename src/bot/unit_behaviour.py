@@ -17,6 +17,10 @@ class UnitBehaviour:
         self.game_state = game_state
         self.manager = manager
 
+        self.closest_factory_tile = self.manager.register_bot(self.unit.unit_id, unit)
+        factory_id = self.manager.bot_factory[self.unit.unit_id]
+        self.factory = self.manager.factories[factory_id]
+
         logger = logging.getLogger(__class__.__name__)
 
         # Create adapter with custom prefix
@@ -32,7 +36,7 @@ class UnitBehaviour:
 
     def assign_to_tile(self, possible_locations):
         unit = self.unit
-        num_assigned = Counter(map(tuple, self.manager.bot_targets.values()))
+        num_assigned = Counter(map(tuple, (v for k, v in self.manager.bot_targets.items() if k != unit.unit_id)))
 
         distances = np.mean((possible_locations - unit.pos) ** 2, 1)
         num_assigned = np.array([num_assigned.get(tuple(pos), 0) for pos in possible_locations])
@@ -87,13 +91,15 @@ class UnitBehaviour:
         # check move_cost is not None, meaning that direction is not blocked
         # check if unit has enough power to move and update the action queue.
         if move_cost is not None:  # and unit.power >= move_cost + unit.action_queue_cost(game_state):
+            cost = move_cost
             if len(unit.action_queue) and directions[0] == unit.action_queue[0, 1] and unit.action_queue[0, 0] == 0:
                 self.logger.info("continue queue")
             else:
                 self.actions = [unit.move(d, repeat=False, n=len(list(gr))) for d, gr in itertools.groupby(directions)][:20]
-
+                cost += unit.action_queue_cost(game_state)
                 self.logger.info(f"new queue {directions} {self.actions}")
-            self.manager.botpos[unit.unit_id] = tuple(np.array(unit.pos) + move_deltas[direction])
+            if unit.power >= cost:
+                self.manager.botpos[unit.unit_id] = tuple(np.array(unit.pos) + move_deltas[direction])
 
     def _return_to_factory(self):
         """
@@ -104,6 +110,7 @@ class UnitBehaviour:
         """
         unit = self.unit
         if self.adjacent_to_factory:
+            self.task.action = "continue"
             if unit.cargo.ice > 0:
                 self.actions = [unit.transfer(0, 0, unit.cargo.ice, repeat=False)]
                 self.logger.info("transfer ice")
@@ -114,6 +121,7 @@ class UnitBehaviour:
                 self.actions = [unit.pickup(4, self.battery_capacity - unit.power)]
                 self.logger.info("pickup power")
         else:
+            self.task.action = "return"
             self.logger.info("move to factory")
             self._move_to(self.closest_factory_tile, [self.closest_factory_tile])
             if unit.unit_id in self.manager.bot_targets:
@@ -124,16 +132,20 @@ class UnitBehaviour:
         game_state = self.game_state
         ice_locations = self.manager.ice_locations
 
+        # logging.debug(f"factory water {self.factory.cargo.water}, self ice {unit.cargo.ice}, should return {((self.factory.cargo.water <= (10 if self.game_state.is_day() else 20)) and unit.cargo.ice)} ")
+
         if (
             unit.cargo.ice < self.cargo_space
             and unit.power > unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.def_move_cost * self.distance_to_factory
+            and not (self.factory.cargo.water <= (10 if self.game_state.is_day() else 20) and unit.cargo.ice)
+            # and self.task.action != "return"
         ):
             # compute the distance to each ice tile from this unit and pick the closest
 
             # ice_rubbles = np.array([rubble_map[pos[0]][pos[1]] for pos in ice_locations])
-            # ice_distances = np.mean((ice_locations - unit.pos) ** 2, 1)  # - (ice_rubbles)*10
-            # sorted_ice = [ice_locations[k] for k in np.argsort(ice_distances)]
-            sorted_ice = self.assign_to_tile(ice_locations)
+            ice_distances = np.mean((ice_locations - unit.pos) ** 2, 1)  # - (ice_rubbles)*10
+            sorted_ice = [ice_locations[k] for k in np.argsort(ice_distances)]
+            # sorted_ice = self.assign_to_tile(ice_locations)
             closest_ice = sorted_ice[0]
             # if we have reached the ice tile, start mining if possible
             if (ice_locations == unit.pos).all(1).any():
@@ -157,12 +169,13 @@ class UnitBehaviour:
         if (
             unit.cargo.ore < self.cargo_space
             and unit.power > unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.def_move_cost * self.distance_to_factory
+            # and self.task.action != "return"
         ):
             # compute the distance to each ore tile from this unit and pick the closest
             # ore_rubbles = np.array([rubble_map[pos[0]][pos[1]] for pos in ore_locations])
-            # ore_distances = np.mean((ore_locations - unit.pos) ** 2, 1)  # + (ore_rubbles)*2
-            # sorted_ore = [ore_locations[k] for k in np.argsort(ore_distances)]
-            sorted_ore = self.assign_to_tile(ore_locations)
+            ore_distances = np.mean((ore_locations - unit.pos) ** 2, 1)  # + (ore_rubbles)*2
+            sorted_ore = [ore_locations[k] for k in np.argsort(ore_distances)]
+            # sorted_ore = self.assign_to_tile(ore_locations)
 
             closest_ore = sorted_ore[0]
             # if we have reached the ore tile, start mining if possible
@@ -186,11 +199,14 @@ class UnitBehaviour:
         game_state = self.game_state
         rubble_locations = self.manager.rubble_locations
 
-        if unit.power > unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.rubble_dig_cost:
+        if (
+            unit.power > unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.rubble_dig_cost
+            # and self.task.action != "return"
+        ):
             # compute the distance to each rubble tile from this unit and pick the closest
-            # rubble_distances = np.mean((rubble_locations - unit.pos) ** 2, 1)
-            # sorted_rubble = [rubble_locations[k] for k in np.argsort(rubble_distances)]
-            sorted_rubble = self.assign_to_tile(rubble_locations)
+            rubble_distances = np.mean((rubble_locations - unit.pos) ** 2, 1)
+            sorted_rubble = [rubble_locations[k] for k in np.argsort(rubble_distances)]
+            # sorted_rubble = self.assign_to_tile(rubble_locations)
 
             closest_rubble = sorted_rubble[0]
 
@@ -238,7 +254,6 @@ class UnitBehaviour:
         self.logger.info(f"{self.unit} current action queue: {self.unit.action_queue}, task: {self.manager.bots.get(unit_id)}")
         self.logger.info(f"botpos {self.manager.botpos}")
 
-        self.closest_factory_tile = self.manager.register_bot(unit_id, unit)
         self.distance_to_factory = np.mean(np.subtract(self.closest_factory_tile, unit.pos) ** 2)
         self.adjacent_to_factory = self.distance_to_factory <= 1
 
@@ -246,14 +261,14 @@ class UnitBehaviour:
             self.logger.info("no power, skip")
             return {}
 
-        task = self.manager.get_bot_task(unit_id)
+        self.task = self.manager.get_bot_task(unit_id)
         task_method = {
             "ice": self._task_ice,
             "ore": self._task_ore,
             "rubble": self._task_rubble,
             "kill": self._task_kill,
             "defend": self._task_kill,
-        }[task]
+        }[self.task.task]
 
         task_method()
 
