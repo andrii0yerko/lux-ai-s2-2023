@@ -166,5 +166,7 @@ chromedriver
 *.html
 *.json
 *.tar.gz
-bot_copies/**
+replays
+replays/**
+result.csv
 __pycache__/**

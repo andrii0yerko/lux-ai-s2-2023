@@ -13,10 +13,17 @@ tasks:
 
   submission:
     cmds:
-      - tar -vc --directory=./src --exclude-ignore=../.gitignore --exclude-vcs --exclude submission.tar.gz --exclude Taskfile.yaml -zf submission.tar.gz .
+      - tar -vc --directory=./src --exclude-ignore=../.gitignore --exclude-vcs --exclude submission.tar.gz --exclude bot_copies/** --exclude Taskfile.yaml -zf submission.tar.gz .
 
   run:
     variables:
-      AGAINST: "orig"
+      AGAINST: "v0_orig"
     cmds:
       - luxai-s2 src/main.py bot_copies/{{.AGAINST}}/main.py -v 2 -s 101 -o replay.html >log.log
+
+  run-many:
+    variables:
+      AGAINST: "v0_orig"
+    cmds:
+      - rm result.csv replays/*
+      - cd tools/luxai_s2_ab && python ./run_ab.py --agent-a ../../src/main.py --agent-b ../../bot_copies/{{.AGAINST}}/main.py --workdir ../..

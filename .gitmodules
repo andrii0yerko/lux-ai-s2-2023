@@ -1,0 +1,3 @@
+[submodule "tools/luxai_s2_ab"]
+	path = tools/luxai_s2_ab
+	url = https://github.com/Mogby/luxai_s2_ab
