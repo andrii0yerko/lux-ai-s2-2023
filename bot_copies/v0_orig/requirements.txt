@@ -1,0 +1,4 @@
+luxai_s2
+importlib-metadata==4.13.0
+gym==0.21
+numpy
