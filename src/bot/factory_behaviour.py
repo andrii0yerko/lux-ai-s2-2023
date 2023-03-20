@@ -1,4 +1,4 @@
-from collections import Counter
+from collections import Counter, defaultdict
 import logging
 
 import numpy as np
@@ -9,8 +9,6 @@ from lux.kit import GameState
 
 
 class FactoryBehaviour:
-    min_bots = {"ice": 1, "ore": 3, "rubble": 5, "kill": 0}
-
     def __init__(self, factory: Factory, game_state: GameState, manager: StateManager):
         self.factory = factory
         self.game_state = game_state
@@ -21,6 +19,7 @@ class FactoryBehaviour:
         self.logger = BehaviourLoggingAdapter(logger, {"real_env_steps": self.game_state.real_env_steps, "unit_id": self.factory.unit_id})
 
         self.robot_cfg = self.game_state.env_cfg.ROBOTS
+        self.min_bots = {}
 
     def _under_attack(self):
         if not len(self.manager.opp_botpos):
@@ -46,19 +45,42 @@ class FactoryBehaviour:
         self.logger.info("queue %s", self.manager.factory_queue.get(self.factory.unit_id))
         self.logger.info("task count %s", robots_num)
 
-        for task in ["kill", "ice", "ore", "rubble"]:
-            if robots_num[task] < self.min_bots[task]:
+        queue_order = [
+            ("ice", 1),
+            ("ore", 3),
+            ("rubble", 5),
+        ]
+
+        self.min_bots = {}
+        for task, desired_count in queue_order:
+            self.min_bots[task] = desired_count
+            if robots_num[task] < desired_count:
                 # minbots = num_bots
                 minbot_task = task
-                self.logger.info("minbottask %s", minbot_task)
+                self.logger.info("minbottask %s, %s", minbot_task, self.min_bots[task])
                 break
-        if not robots_num["ice"]:
-            minbot_task = "ice"
-            self.logger.info("No ice workers! set to %s", minbot_task)
-        elif not robots_num["ore"]:
-            minbot_task = "ore"
-            self.logger.info("No ore workers! set to %s", minbot_task)
         return minbot_task
+
+    def _rebalance_task(self):
+        # TODO
+        # It can cause issues with bots created on previous turn
+        # We need to assign bots to tasks first, then rebalance/assign new
+
+        heavies = defaultdict(
+            list, {task: [robot for robot in robots if robot in self.manager.botposheavy] for task, robots in self.robots.items()}
+        )
+
+        # At least one heavy should dig ice or factory will die (in the current approach with sequential task assigning)
+        if not heavies["ice"] and (heavies["rubble"] or heavies["ore"]):
+            new_bot = (heavies["rubble"] + heavies["ore"])[0]
+            old_bot = None
+            if self.robots["ice"]:
+                old_bot = self.robots["ice"][0]
+
+            prev_task = self.manager.bots[new_bot].task
+            self.manager.bots[new_bot].task = "ice"
+            if old_bot:
+                self.manager.bots[old_bot].task = prev_task
 
     def _assign_defenders(self):
         preference = "HEAVY"
@@ -88,10 +110,10 @@ class FactoryBehaviour:
         resid = {task: num - len(self.robots[task]) for task, num in self.min_bots.items()}
 
         for x in self.robots["defend"]:
-            if resid["ice"]:
+            if resid.get("ice"):
                 self.manager.bots[x] = RobotTask("ice")
                 resid["ice"] -= 1
-            elif resid["ore"]:
+            elif resid.get("ore"):
                 self.manager.bots[x] = RobotTask("ore")
                 resid["ore"] -= 1
             else:
@@ -115,29 +137,29 @@ class FactoryBehaviour:
         if not under_attack and have_defenders:
             self._revoke_defenders()
 
+        self._rebalance_task()
+
         if self.next_bot_task is not None:
             if self.next_bot_task in [
                 "kill",
                 "defend",
             ]:
-                if factory.power >= self.robot_cfg["HEAVY"].POWER_COST and factory.cargo.metal >= self.robot_cfg["HEAVY"].METAL_COST:
+                if factory.can_build_heavy(game_state):
                     actions = {unit_id: factory.build_heavy()}
             elif self.next_bot_task in ["ice"]:
-                if factory.power >= self.robot_cfg["HEAVY"].POWER_COST and factory.cargo.metal >= self.robot_cfg["HEAVY"].METAL_COST:
+                if factory.can_build_heavy(game_state):
                     actions = {unit_id: factory.build_heavy()}
                     self.manager.factory_queue[unit_id].append(self.next_bot_task)
-                elif factory.power >= self.robot_cfg["LIGHT"].POWER_COST and factory.cargo.metal >= self.robot_cfg["LIGHT"].METAL_COST:
+                elif factory.can_build_light(game_state):
                     actions = {unit_id: factory.build_light()}
                     self.manager.factory_queue[unit_id].append(self.next_bot_task)
             else:
-                if factory.power >= self.robot_cfg["LIGHT"].POWER_COST and factory.cargo.metal >= self.robot_cfg["LIGHT"].METAL_COST:
+                if factory.can_build_light(game_state):
                     actions = {unit_id: factory.build_light()}
                     self.manager.factory_queue[unit_id].append(self.next_bot_task)
-                elif factory.power >= self.robot_cfg["HEAVY"].POWER_COST and factory.cargo.metal >= self.robot_cfg["HEAVY"].METAL_COST:
+                elif factory.can_build_heavy(game_state):
                     actions = {unit_id: factory.build_heavy()}
                     self.manager.factory_queue[unit_id].append(self.next_bot_task)
-
-            # task = FactoryTask(task=self.minbot_task)
 
         step = game_state.real_env_steps
         if factory.can_water(game_state) and step > 800 and factory.cargo.water > (1000 - step) + 100:
