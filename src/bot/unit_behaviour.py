@@ -1,19 +1,38 @@
-from collections import Counter
 import itertools
 import logging
+from collections import Counter
+from typing import NamedTuple
 
 import numpy as np
+
 from bot.logging import BehaviourLoggingAdapter
 from bot.state_manager import StateManager
 from lux.kit import GameState
-from lux.unit import Unit
+from lux.unit import Unit, move_deltas
 
-move_deltas = np.array([[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0]])
+
+class FoundPath(NamedTuple):
+    target: np.ndarray
+    directions: list
+    avoid_collisions: bool = False
+
+    @property
+    def direction(self):
+        return self.directions[0]
 
 
 class UnitBehaviour:
+    # __registry = {}
+
+    # def __new__(cls, unit: Unit, *args, **kwargs):
+    #     if unit.unit_id not in cls.__registry:
+    #         cls.__registry[unit.unit_id] = super(UnitBehaviour, cls).__new__(cls)
+    #     return cls.__registry[unit.unit_id]
+
     def __init__(self, unit: Unit, game_state: GameState, manager: StateManager):
         self.unit = unit
+        self.unit_id = self.unit.unit_id
+
         self.game_state = game_state
         self.manager = manager
 
@@ -24,7 +43,7 @@ class UnitBehaviour:
         logger = logging.getLogger(__class__.__name__)
 
         # Create adapter with custom prefix
-        self.logger = BehaviourLoggingAdapter(logger, {"real_env_steps": self.game_state.real_env_steps, "unit_id": self.unit.unit_id})
+        self.logger = BehaviourLoggingAdapter(logger, {"behaviour": self})
 
         unit_cfg = self.game_state.env_cfg.ROBOTS[unit.unit_type]
         self.battery_capacity = unit_cfg.BATTERY_CAPACITY
@@ -46,60 +65,56 @@ class UnitBehaviour:
         self.manager.bot_targets[unit.unit_id] = possible_locations[idx][0]
         return possible_locations[idx]
 
-    def get_direction(self, unit, closest_tile, sorted_tiles):
-        closest_tile = np.array(closest_tile)
+    def get_direction(self, unit, sorted_tiles) -> FoundPath:
+        closest_tile = np.array(sorted_tiles[0])
+        path = FoundPath(closest_tile, self.manager.shortest_path(unit.pos, closest_tile))
         # direction = direction_to(np.array(unit.pos), closest_tile)
-        directions = self.manager.shortest_path(unit.pos, closest_tile)
-        direction = directions[0]
         k = 0
         unit_type = unit.unit_type
-        self.logger.debug(f"get_direction: {direction}")
+        self.logger.debug(f"get_direction: {path.direction}")
 
-        while self.manager.check_collision(np.array(unit.pos), direction, unit_type) and k < min(len(sorted_tiles) - 1, 500):
+        while self.manager.check_collision(np.array(unit.pos), path.direction, unit_type) and k < min(len(sorted_tiles) - 1, 500):
             k += 1
-            closest_tile = sorted_tiles[k]
-            closest_tile = np.array(closest_tile)
-            # direction = direction_to(np.array(unit.pos), closest_tile)
-            directions = self.manager.shortest_path(unit.pos, closest_tile)
-            direction = directions[0]
-            self.logger.debug(f"get_direction change: {direction}")
+            alternative_tile = np.array(sorted_tiles[k])
+            path = FoundPath(alternative_tile, self.manager.shortest_path(unit.pos, alternative_tile), True)
+            # direction = direction_to(np.array(unit.pos), alternative_tile)
+            self.logger.debug(f"get_direction change: {path.direction}")
 
-        if self.manager.check_collision(unit.pos, direction, unit_type):
+        if self.manager.check_collision(unit.pos, path.direction, unit_type):
             for direction_x in np.arange(4, -1, -1):
                 if not self.manager.check_collision(np.array(unit.pos), direction_x, unit_type):
-                    direction = direction_x
-                    directions = [direction]
-                    self.logger.debug(f"get_direction change search: {direction}")
+                    path = FoundPath(closest_tile, [direction_x], True)
+                    self.logger.debug(f"get_direction change search: {direction_x}")
                     break
 
-        if self.manager.check_collision(np.array(unit.pos), direction, unit_type):
-            direction = 0
+        # TODO why this is even possible? Previous block should avoid any collisions by choosing direction 0
+        if self.manager.check_collision(np.array(unit.pos), path.direction, unit_type):
             direction = np.random.choice(np.arange(5))
-            directions = [direction]
-            self.logger.debug(f"get_direction change finally: {direction}")
+            path = FoundPath(closest_tile, [direction], True)
+            self.logger.debug(f"get_direction change finally: {path.direction}")
 
-        self.logger.info(f"{unit.pos}, {closest_tile}, directions, {directions}")
+        self.logger.info(f"{unit.pos}, {closest_tile}, directions, {path.directions}")
 
-        return direction, directions
+        return path
 
-    def _move_to(self, tile, sorted_alternatives):
+    def _move_to(self, sorted_alternatives):
         unit = self.unit
         game_state = self.game_state
 
-        direction, directions = self.get_direction(unit, tile, sorted_alternatives)
-        move_cost = unit.move_cost(game_state, direction)
+        path = self.get_direction(unit, sorted_alternatives)
+        move_cost = unit.move_cost(game_state, path.direction)
         # check move_cost is not None, meaning that direction is not blocked
         # check if unit has enough power to move and update the action queue.
         if move_cost is not None:  # and unit.power >= move_cost + unit.action_queue_cost(game_state):
             cost = move_cost
-            if len(unit.action_queue) and directions[0] == unit.action_queue[0, 1] and unit.action_queue[0, 0] == 0:
+            if len(unit.action_queue) and path.direction == unit.action_queue[0, 1] and unit.action_queue[0, 0] == 0:
                 self.logger.info("continue queue")
             else:
-                self.actions = [unit.move(d, repeat=False, n=len(list(gr))) for d, gr in itertools.groupby(directions)][:20]
+                self.actions = [unit.move(d, repeat=False, n=len(list(gr))) for d, gr in itertools.groupby(path.directions)][:20]
                 cost += unit.action_queue_cost(game_state)
-                self.logger.info(f"new queue {directions} {self.actions}")
+                self.logger.info(f"new queue {path.directions} {self.actions}")
             if unit.power >= cost:
-                self.manager.botpos[unit.unit_id] = tuple(np.array(unit.pos) + move_deltas[direction])
+                self.manager.botpos[unit.unit_id] = tuple(np.array(unit.pos) + move_deltas[path.direction])
 
     def _return_to_factory(self):
         """
@@ -123,7 +138,7 @@ class UnitBehaviour:
         else:
             self.task.action = "return"
             self.logger.info("move to factory")
-            self._move_to(self.closest_factory_tile, [self.closest_factory_tile])
+            self._move_to([self.closest_factory_tile])
             if unit.unit_id in self.manager.bot_targets:
                 self.manager.bot_targets.pop(unit.unit_id)
 
@@ -146,7 +161,6 @@ class UnitBehaviour:
             ice_distances = np.mean((ice_locations - unit.pos) ** 2, 1)  # - (ice_rubbles)*10
             sorted_ice = [ice_locations[k] for k in np.argsort(ice_distances)]
             # sorted_ice = self.assign_to_tile(ice_locations)
-            closest_ice = sorted_ice[0]
             # if we have reached the ice tile, start mining if possible
             if (ice_locations == unit.pos).all(1).any():
                 if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
@@ -155,7 +169,7 @@ class UnitBehaviour:
 
             else:
                 self.logger.info("move to ice")
-                self._move_to(closest_ice, sorted_ice)
+                self._move_to(sorted_ice)
         elif (
             unit.cargo.ice >= self.cargo_space
             or unit.power <= unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.def_move_cost * self.distance_to_factory
@@ -177,7 +191,6 @@ class UnitBehaviour:
             sorted_ore = [ore_locations[k] for k in np.argsort(ore_distances)]
             # sorted_ore = self.assign_to_tile(ore_locations)
 
-            closest_ore = sorted_ore[0]
             # if we have reached the ore tile, start mining if possible
             # if np.all(closest_ore == unit.pos):
             if (ore_locations == unit.pos).all(1).any():
@@ -186,7 +199,7 @@ class UnitBehaviour:
                     self.logger.info("ore reached, dig")
             else:
                 self.logger.info("move to ore")
-                self._move_to(closest_ore, sorted_ore)
+                self._move_to(sorted_ore)
 
         elif (
             unit.cargo.ore >= self.cargo_space
@@ -200,7 +213,8 @@ class UnitBehaviour:
         rubble_locations = self.manager.rubble_locations
 
         if (
-            unit.power > unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.rubble_dig_cost
+            unit.power
+            > unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.rubble_dig_cost
             # and self.task.action != "return"
         ):
             # compute the distance to each rubble tile from this unit and pick the closest
@@ -218,7 +232,7 @@ class UnitBehaviour:
 
             else:
                 # there was a check than rubble exists, but i believe this in nonsence in the actual game setup
-                self._move_to(closest_rubble, sorted_rubble)
+                self._move_to(sorted_rubble)
 
         elif unit.power <= unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.rubble_dig_cost:
             self._return_to_factory()
@@ -236,11 +250,11 @@ class UnitBehaviour:
 
             if min_distance == 1:
                 self.logger.info("РЕЗНЯ")
-                self._move_to(pos_min_distance, [pos_min_distance])
+                self._move_to([pos_min_distance])
             else:
                 if unit.power > unit.action_queue_cost(game_state):
                     self.logger.info("move for attack")
-                    self._move_to(pos_min_distance, [pos_min_distance])
+                    self._move_to([pos_min_distance])
                 else:
                     self._return_to_factory()
 

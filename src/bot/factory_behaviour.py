@@ -11,15 +11,19 @@ from lux.kit import GameState
 class FactoryBehaviour:
     def __init__(self, factory: Factory, game_state: GameState, manager: StateManager):
         self.factory = factory
+        self.unit_id = self.factory.unit_id
         self.game_state = game_state
         self.manager = manager
         self.robots = self.manager.get_factory_bots(self.factory.unit_id)
 
         logger = logging.getLogger(__class__.__name__)
-        self.logger = BehaviourLoggingAdapter(logger, {"real_env_steps": self.game_state.real_env_steps, "unit_id": self.factory.unit_id})
-
-        self.robot_cfg = self.game_state.env_cfg.ROBOTS
+        self.logger = BehaviourLoggingAdapter(logger, {"behaviour": self})
         self.min_bots = {}
+
+    def _ice_nearby(self):
+        ice_distances = np.mean((self.manager.ice_locations - self.factory.pos) ** 2, 1)
+        one_bot = self.manager.ice_locations[ice_distances <= 3]
+        return len(one_bot)
 
     def _under_attack(self):
         if not len(self.manager.opp_botpos):
