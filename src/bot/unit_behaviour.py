@@ -36,9 +36,11 @@ class UnitBehaviour:
         self.game_state = game_state
         self.manager = manager
 
-        self.closest_factory_tile = self.manager.register_bot(self.unit.unit_id, unit)
-        factory_id = self.manager.bot_factory[self.unit.unit_id]
+        self.closest_factory_tile = self.manager.register_bot(self.unit_id, unit)
+        factory_id = self.manager.bot_factory[self.unit_id]
         self.factory = self.manager.factories[factory_id]
+
+        self.target = self.manager.bot_targets.get(self.unit_id)
 
         logger = logging.getLogger(__class__.__name__)
 
@@ -107,11 +109,15 @@ class UnitBehaviour:
         # check if unit has enough power to move and update the action queue.
         if move_cost is not None:  # and unit.power >= move_cost + unit.action_queue_cost(game_state):
             cost = move_cost
-            if len(unit.action_queue) and path.direction == unit.action_queue[0, 1] and unit.action_queue[0, 0] == 0:
+            if len(unit.action_queue) and (
+                (path.direction == unit.action_queue[0, 1] and unit.action_queue[0, 0] == 0)
+                # or (self.task in ["ice", "ore"] and not path.avoid_collisions)
+            ):
                 self.logger.info("continue queue")
             else:
                 self.actions = [unit.move(d, repeat=False, n=len(list(gr))) for d, gr in itertools.groupby(path.directions)][:20]
                 cost += unit.action_queue_cost(game_state)
+                self.manager.bot_targets[self.unit_id] = path.target
                 self.logger.info(f"new queue {path.directions} {self.actions}")
             if unit.power >= cost:
                 self.manager.botpos[unit.unit_id] = tuple(np.array(unit.pos) + move_deltas[path.direction])
@@ -146,8 +152,6 @@ class UnitBehaviour:
         unit = self.unit
         game_state = self.game_state
         ice_locations = self.manager.ice_locations
-
-        # logging.debug(f"factory water {self.factory.cargo.water}, self ice {unit.cargo.ice}, should return {((self.factory.cargo.water <= (10 if self.game_state.is_day() else 20)) and unit.cargo.ice)} ")
 
         if (
             unit.cargo.ice < self.cargo_space
@@ -219,10 +223,9 @@ class UnitBehaviour:
         ):
             # compute the distance to each rubble tile from this unit and pick the closest
             rubble_distances = np.mean((rubble_locations - unit.pos) ** 2, 1)
+
             sorted_rubble = [rubble_locations[k] for k in np.argsort(rubble_distances)]
             # sorted_rubble = self.assign_to_tile(rubble_locations)
-
-            closest_rubble = sorted_rubble[0]
 
             # if we have reached the rubble tile, start mining if possible
             if (rubble_locations == unit.pos).all(1).any():

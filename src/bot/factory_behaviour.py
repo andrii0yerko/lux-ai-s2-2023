@@ -32,7 +32,7 @@ class FactoryBehaviour:
         opponent_unit_distances = np.mean((opp_pos - self.factory.pos) ** 2, 1)
         min_distance = np.min(opponent_unit_distances)
         self._closest_enemy = opp_pos[np.argmin(opponent_unit_distances)]
-        return min_distance < 15
+        return min_distance < 7
 
     def _have_defender(self):
         if not len(self.robots["defend"]):
@@ -50,6 +50,7 @@ class FactoryBehaviour:
         self.logger.info("task count %s", robots_num)
 
         queue_order = [
+            # ("kill", 1),
             ("ice", 1),
             ("ore", 3),
             ("rubble", 5),
@@ -150,6 +151,7 @@ class FactoryBehaviour:
             ]:
                 if factory.can_build_heavy(game_state):
                     actions = {unit_id: factory.build_heavy()}
+                    self.manager.factory_queue[unit_id].append(self.next_bot_task)
             elif self.next_bot_task in ["ice"]:
                 if factory.can_build_heavy(game_state):
                     actions = {unit_id: factory.build_heavy()}

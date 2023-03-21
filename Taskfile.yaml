@@ -13,7 +13,7 @@ tasks:
 
   submission:
     cmds:
-      - tar -vc --directory=./src --exclude-ignore=../.gitignore --exclude-vcs --exclude submission.tar.gz --exclude bot_copies/** --exclude Taskfile.yaml -zf submission.tar.gz .
+      - tar -vc --directory=./src --exclude-ignore=../.gitignore --exclude-vcs --exclude submission.tar.gz --exclude Taskfile.yaml -zf submission.tar.gz .
 
   run:
     variables:

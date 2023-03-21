@@ -1,5 +1,6 @@
 from collections import defaultdict
 from dataclasses import dataclass
+import logging
 import networkx as nx
 import numpy as np
 
@@ -104,6 +105,7 @@ class StateManager:
     def get_bot_task(self, unit_id):
         if self.bots[unit_id] == "":
             task = "ice"
+            logging.info("%s, assign new task, len queue %s", unit_id, len(self.factory_queue[self.bot_factory[unit_id]]))
             if len(self.factory_queue[self.bot_factory[unit_id]]) != 0:
                 task = self.factory_queue[self.bot_factory[unit_id]].pop(0)
             self.bots[unit_id] = RobotTask(task)
