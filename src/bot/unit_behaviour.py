@@ -262,6 +262,8 @@ class UnitBehaviour:
                     self._move_to([pos_min_distance])
                 else:
                     self._return_to_factory()
+        else:
+            self._task_rubble()
 
     def act(self):
         # Assigning task for the bot

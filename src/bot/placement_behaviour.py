@@ -64,8 +64,8 @@ class PlacementBehaviour:
                     np.min(ice_tile_distances) * 10
                     + 0.01 * np.min(ore_tile_distances)
                     + 10 * density_rubble / (d_rubble)
-                    - closes_opp_factory_dist * 0.1
-                    + closes_my_factory_dist * 0.01
+                    + closes_opp_factory_dist * 0.1
+                    - closes_my_factory_dist * 0.1
                 )
 
                 if minimum_ice_dist < min_dist:

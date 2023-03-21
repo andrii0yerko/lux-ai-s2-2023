@@ -27,3 +27,4 @@ tasks:
     cmds:
       - rm result.csv replays/*
       - cd tools/luxai_s2_ab && python ./run_ab.py --agent-a ../../src/main.py --agent-b ../../bot_copies/{{.AGAINST}}/main.py --workdir ../..
+      - python -c 'import pandas as pd; print(pd.read_csv("result.csv")["a_win_flag"].mean())'

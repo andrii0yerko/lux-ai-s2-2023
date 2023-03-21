@@ -49,9 +49,11 @@ class StateManager:
         rubbles = game_state.board.rubble
         for x in range(rubbles.shape[0]):
             for y in range(rubbles.shape[1]):
+                cost = rubbles[x, y]
                 if (x, y) in self.enemy_factory_tiles:
-                    continue
-                G.add_node((x, y), rubble=rubbles[x, y])
+                    cost = 10_000
+
+                G.add_node((x, y), rubble=cost)
 
         deltas = [(1, 0), (-1, 0), (0, 1), (0, -1)]
         for g1 in G.nodes:

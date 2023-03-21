@@ -50,7 +50,7 @@ class FactoryBehaviour:
         self.logger.info("task count %s", robots_num)
 
         queue_order = [
-            # ("kill", 1),
+            ("kill", 1),
             ("ice", 1),
             ("ore", 3),
             ("rubble", 5),
