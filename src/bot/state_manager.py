@@ -8,6 +8,14 @@ from lux.kit import GameState
 from lux.utils import direction_to
 
 
+def get_3x3_indices(pos):
+    indices = np.indices((3, 3)) - 1  # create array of indices with center at (1,1)
+    shift = pos.reshape(-1, 1, 1)  # reshape shift array for broadcasting
+    indices = indices + shift  # shift indices to center at (x,y)
+    indices = indices.reshape(2, -1).T  # flatten indices and return as Nx2 array
+    return indices
+
+
 @dataclass
 class RobotTask:
     task: str
@@ -36,9 +44,13 @@ class StateManager:
         def add_delta(a):
             return tuple(np.array(a[0]) + np.array(a[1]))
 
+        logging.info("%s", game_state.factories[self.opp_player])
+
         rubbles = game_state.board.rubble
         for x in range(rubbles.shape[0]):
             for y in range(rubbles.shape[1]):
+                if (x, y) in self.enemy_factory_tiles:
+                    continue
                 G.add_node((x, y), rubble=rubbles[x, y])
 
         deltas = [(1, 0), (-1, 0), (0, 1), (0, -1)]
@@ -114,6 +126,9 @@ class StateManager:
         return self.bots[unit_id]
 
     def refresh(self, game_state: GameState):
+        self.enemy_factory_tiles = {
+            tuple(xy) for factory in game_state.factories[self.opp_player].values() for xy in get_3x3_indices(factory.pos).tolist()
+        }
         self._graph = self._build_graph(game_state)
 
         # Unit locations

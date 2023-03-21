@@ -245,8 +245,10 @@ class UnitBehaviour:
         unit = self.unit
         game_state = self.game_state
 
-        if len(self.manager.opp_botpos) != 0:
-            opp_pos = np.array(self.manager.opp_botpos).reshape(-1, 2)
+        opp_botpos = np.array([xy for xy in self.manager.opp_botpos if tuple(xy) not in self.manager.enemy_factory_tiles])
+
+        if len(opp_botpos) != 0:
+            opp_pos = np.array(opp_botpos).reshape(-1, 2)
             opponent_unit_distances = np.mean((opp_pos - unit.pos) ** 2, 1)
             min_distance = np.min(opponent_unit_distances)
             pos_min_distance = np.array(opp_pos[np.argmin(min_distance)])
