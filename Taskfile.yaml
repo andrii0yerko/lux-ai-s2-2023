@@ -9,7 +9,7 @@ tasks:
   backup:
     cmds:
       - mkdir -p  {{.BOT_COPIES}}/{{.CLI_ARGS}}
-      - cp -r `ls src | grep -vE 'env|bot_copies|json|tar\.gz'` {{.BOT_COPIES}}/{{.CLI_ARGS}}
+      - cp -r src/* {{.BOT_COPIES}}/{{.CLI_ARGS}}
 
   submission:
     cmds:
