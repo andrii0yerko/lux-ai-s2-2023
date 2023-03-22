@@ -16,7 +16,6 @@ def get_3x3_indices(pos):
 
 
 class MapManager:
-
     def __init__(self, player, game_state) -> None:
         self.player = player
         self.opp_player = "player_1" if self.player == "player_0" else "player_0"
@@ -48,6 +47,14 @@ class MapManager:
                     G.add_edge(g1, g2, cost=20 + rubbles[g2])
         return G
 
+    def shortest_path(self, pos_from, pos_to):
+        path = np.array(nx.shortest_path(self._graph, source=tuple(pos_from), target=tuple(pos_to), weight="cost"))
+        return [direction_to(a, b) for a, b in zip(path[:-1], path[1:])]
+
+    def shortest_path_cost(self, pos_from, pos_to):
+        path = nx.shortest_path(self._graph, source=tuple(pos_from), target=tuple(pos_to), weight="cost")
+        return nx.path_weight(self._graph, path, "cost")
+
     def get_closest_factory(self, pos):
         factory_distances = np.mean((self.factory_tiles - pos) ** 2, 1)
         min_index = np.argmin(factory_distances)
@@ -55,7 +62,7 @@ class MapManager:
         closest_factory_id = self.factory_ids[min_index]
         return closest_factory_id, closest_factory_tile
 
-    def get_tiles_distances(self, pos, kind):
+    def get_tiles_distances(self, pos, kind, distance="l1"):
         mapping = {
             "ice": self.ice_locations,
             "ore": self.ore_locations,
@@ -66,17 +73,18 @@ class MapManager:
         if not len(locations):
             return [], []
 
-        distances = np.mean((locations - pos) ** 2, 1)
+        if distance == "l1":
+            distances = np.mean(np.abs(locations - pos), 1)
+        elif distance == "l2":
+            distances = np.mean((locations - pos) ** 2, 1)
+        elif distance == "cost":  # too expensive to compute
+            distances = np.array([self.shortest_path_cost(pos, loc) for loc in locations])
         idx = np.argsort(distances)
         return locations[idx], distances[idx]
 
     def get_vulnerable_enemies(self):
         opp_botpos = np.array([xy for xy in self.opp_botpos if tuple(xy) not in self.enemy_factory_tiles])
         return opp_botpos
-
-    def shortest_path(self, pos_from, pos_to):
-        path = np.array(nx.shortest_path(self._graph, source=tuple(pos_from), target=tuple(pos_to), weight="cost"))
-        return [direction_to(a, b) for a, b in zip(path[:-1], path[1:])]
 
     def check_collision(self, pos, direction, unit_type="LIGHT"):
         unitpos = set(self.botpos.values())
