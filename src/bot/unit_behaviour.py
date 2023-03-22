@@ -6,7 +6,8 @@ from typing import NamedTuple
 import numpy as np
 
 from bot.logging import BehaviourLoggingAdapter
-from bot.state_manager import StateManager
+from bot.task_manager import TaskManager
+from bot.map_manager import MapManager
 from lux.kit import GameState
 from lux.unit import Unit, move_deltas
 
@@ -29,16 +30,17 @@ class UnitBehaviour:
     #         cls.__registry[unit.unit_id] = super(UnitBehaviour, cls).__new__(cls)
     #     return cls.__registry[unit.unit_id]
 
-    def __init__(self, unit: Unit, game_state: GameState, manager: StateManager):
+    def __init__(self, unit: Unit, game_state: GameState, manager: TaskManager, map_state: MapManager):
         self.unit = unit
         self.unit_id = self.unit.unit_id
 
         self.game_state = game_state
         self.manager = manager
+        self.map_state = map_state
 
         self.closest_factory_tile = self.manager.register_bot(self.unit_id, unit)
         factory_id = self.manager.bot_factory[self.unit_id]
-        self.factory = self.manager.factories[factory_id]
+        self.factory = self.map_state.factories[factory_id]
 
         self.target = self.manager.bot_targets.get(self.unit_id)
 
@@ -69,28 +71,28 @@ class UnitBehaviour:
 
     def get_direction(self, unit, sorted_tiles) -> FoundPath:
         closest_tile = np.array(sorted_tiles[0])
-        path = FoundPath(closest_tile, self.manager.shortest_path(unit.pos, closest_tile))
+        path = FoundPath(closest_tile, self.map_state.shortest_path(unit.pos, closest_tile))
         # direction = direction_to(np.array(unit.pos), closest_tile)
         k = 0
         unit_type = unit.unit_type
         self.logger.debug(f"get_direction: {path.direction}")
 
-        while self.manager.check_collision(np.array(unit.pos), path.direction, unit_type) and k < min(len(sorted_tiles) - 1, 500):
+        while self.map_state.check_collision(np.array(unit.pos), path.direction, unit_type) and k < min(len(sorted_tiles) - 1, 500):
             k += 1
             alternative_tile = np.array(sorted_tiles[k])
-            path = FoundPath(alternative_tile, self.manager.shortest_path(unit.pos, alternative_tile), True)
+            path = FoundPath(alternative_tile, self.map_state.shortest_path(unit.pos, alternative_tile), True)
             # direction = direction_to(np.array(unit.pos), alternative_tile)
             self.logger.debug(f"get_direction change: {path.direction}")
 
-        if self.manager.check_collision(unit.pos, path.direction, unit_type):
+        if self.map_state.check_collision(unit.pos, path.direction, unit_type):
             for direction_x in np.arange(4, -1, -1):
-                if not self.manager.check_collision(np.array(unit.pos), direction_x, unit_type):
+                if not self.map_state.check_collision(np.array(unit.pos), direction_x, unit_type):
                     path = FoundPath(closest_tile, [direction_x], True)
                     self.logger.debug(f"get_direction change search: {direction_x}")
                     break
 
         # TODO why this is even possible? Previous block should avoid any collisions by choosing direction 0
-        if self.manager.check_collision(np.array(unit.pos), path.direction, unit_type):
+        if self.map_state.check_collision(np.array(unit.pos), path.direction, unit_type):
             direction = np.random.choice(np.arange(5))
             path = FoundPath(closest_tile, [direction], True)
             self.logger.debug(f"get_direction change finally: {path.direction}")
@@ -120,7 +122,7 @@ class UnitBehaviour:
                 self.manager.bot_targets[self.unit_id] = path.target
                 self.logger.info(f"new queue {path.directions} {self.actions}")
             if unit.power >= cost:
-                self.manager.botpos[unit.unit_id] = tuple(np.array(unit.pos) + move_deltas[path.direction])
+                self.map_state.botpos[unit.unit_id] = tuple(np.array(unit.pos) + move_deltas[path.direction])
 
     def _return_to_factory(self):
         """
@@ -151,7 +153,6 @@ class UnitBehaviour:
     def _task_ice(self):
         unit = self.unit
         game_state = self.game_state
-        ice_locations = self.manager.ice_locations
 
         if (
             unit.cargo.ice < self.cargo_space
@@ -161,12 +162,9 @@ class UnitBehaviour:
         ):
             # compute the distance to each ice tile from this unit and pick the closest
 
-            # ice_rubbles = np.array([rubble_map[pos[0]][pos[1]] for pos in ice_locations])
-            ice_distances = np.mean((ice_locations - unit.pos) ** 2, 1)  # - (ice_rubbles)*10
-            sorted_ice = [ice_locations[k] for k in np.argsort(ice_distances)]
-            # sorted_ice = self.assign_to_tile(ice_locations)
+            sorted_ice = self.map_state.get_tiles_distances(unit.pos, "ice")[0]
             # if we have reached the ice tile, start mining if possible
-            if (ice_locations == unit.pos).all(1).any():
+            if (self.map_state.ice_locations == unit.pos).all(1).any():
                 if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
                     self.actions = [unit.dig(repeat=False)]
                     self.logger.info("reached ice, dig")
@@ -183,21 +181,15 @@ class UnitBehaviour:
     def _task_ore(self):
         unit = self.unit
         game_state = self.game_state
-        ore_locations = self.manager.ore_locations
         if (
             unit.cargo.ore < self.cargo_space
             and unit.power > unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.def_move_cost * self.distance_to_factory
             # and self.task.action != "return"
         ):
             # compute the distance to each ore tile from this unit and pick the closest
-            # ore_rubbles = np.array([rubble_map[pos[0]][pos[1]] for pos in ore_locations])
-            ore_distances = np.mean((ore_locations - unit.pos) ** 2, 1)  # + (ore_rubbles)*2
-            sorted_ore = [ore_locations[k] for k in np.argsort(ore_distances)]
-            # sorted_ore = self.assign_to_tile(ore_locations)
-
+            sorted_ore = self.map_state.get_tiles_distances(unit.pos, "ore")[0]
             # if we have reached the ore tile, start mining if possible
-            # if np.all(closest_ore == unit.pos):
-            if (ore_locations == unit.pos).all(1).any():
+            if (self.map_state.ore_locations == unit.pos).all(1).any():
                 if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
                     self.actions = [unit.dig(repeat=False)]
                     self.logger.info("ore reached, dig")
@@ -214,7 +206,6 @@ class UnitBehaviour:
     def _task_rubble(self):
         unit = self.unit
         game_state = self.game_state
-        rubble_locations = self.manager.rubble_locations
 
         if (
             unit.power
@@ -222,13 +213,10 @@ class UnitBehaviour:
             # and self.task.action != "return"
         ):
             # compute the distance to each rubble tile from this unit and pick the closest
-            rubble_distances = np.mean((rubble_locations - unit.pos) ** 2, 1)
 
-            sorted_rubble = [rubble_locations[k] for k in np.argsort(rubble_distances)]
-            # sorted_rubble = self.assign_to_tile(rubble_locations)
-
+            sorted_rubble = self.map_state.get_tiles_distances(unit.pos, "rubble")[0]
             # if we have reached the rubble tile, start mining if possible
-            if (rubble_locations == unit.pos).all(1).any():
+            if (self.map_state.rubble_locations == unit.pos).all(1).any():
                 if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
                     self.actions = [unit.dig(repeat=False)]
                     self.logger.info("rubble reached, dig")
@@ -245,13 +233,13 @@ class UnitBehaviour:
         unit = self.unit
         game_state = self.game_state
 
-        opp_botpos = np.array([xy for xy in self.manager.opp_botpos if tuple(xy) not in self.manager.enemy_factory_tiles])
+        opp_pos, opponent_unit_distances = self.map_state.get_tiles_distances(unit.pos, "enemy")
 
-        if len(opp_botpos) != 0:
-            opp_pos = np.array(opp_botpos).reshape(-1, 2)
-            opponent_unit_distances = np.mean((opp_pos - unit.pos) ** 2, 1)
-            min_distance = np.min(opponent_unit_distances)
-            pos_min_distance = np.array(opp_pos[np.argmin(min_distance)])
+        if len(opp_pos) != 0:
+            min_distance = opponent_unit_distances[0]
+            # FIXME it should be opp_pos[0], but because of bug in original code worked this way
+            # investigate, and fix
+            pos_min_distance = self.map_state.get_vulnerable_enemies()[0]
 
             if min_distance == 1:
                 self.logger.info("РЕЗНЯ")
@@ -273,7 +261,7 @@ class UnitBehaviour:
         unit = self.unit
 
         self.logger.info(f"{self.unit} current action queue: {self.unit.action_queue}, task: {self.manager.bots.get(unit_id)}")
-        self.logger.info(f"botpos {self.manager.botpos}")
+        self.logger.info(f"botpos {self.map_state.botpos}")
 
         self.distance_to_factory = np.mean(np.subtract(self.closest_factory_tile, unit.pos) ** 2)
         self.adjacent_to_factory = self.distance_to_factory <= 1

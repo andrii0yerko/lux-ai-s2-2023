@@ -3,35 +3,32 @@ import logging
 
 import numpy as np
 from bot.logging import BehaviourLoggingAdapter
-from bot.state_manager import RobotTask, StateManager
+from bot.task_manager import RobotTask, TaskManager
+from bot.map_manager import MapManager
 from lux.factory import Factory
 from lux.kit import GameState
 
 
 class FactoryBehaviour:
-    def __init__(self, factory: Factory, game_state: GameState, manager: StateManager):
+    def __init__(self, factory: Factory, game_state: GameState, manager: TaskManager, map_state: MapManager):
         self.factory = factory
         self.unit_id = self.factory.unit_id
         self.game_state = game_state
         self.manager = manager
+        self.map_state = map_state
         self.robots = self.manager.get_factory_bots(self.factory.unit_id)
 
         logger = logging.getLogger(__class__.__name__)
         self.logger = BehaviourLoggingAdapter(logger, {"behaviour": self})
         self.min_bots = {}
 
-    def _ice_nearby(self):
-        ice_distances = np.mean((self.manager.ice_locations - self.factory.pos) ** 2, 1)
-        one_bot = self.manager.ice_locations[ice_distances <= 3]
-        return len(one_bot)
-
     def _under_attack(self):
-        if not len(self.manager.opp_botpos):
+        opp_botpos, opponent_unit_distances = self.map_state.get_tiles_distances(self.factory.pos, "enemy")
+        if not len(opp_botpos):
             return False
-        opp_pos = np.array(self.manager.opp_botpos).reshape(-1, 2)
-        opponent_unit_distances = np.mean((opp_pos - self.factory.pos) ** 2, 1)
-        min_distance = np.min(opponent_unit_distances)
-        self._closest_enemy = opp_pos[np.argmin(opponent_unit_distances)]
+
+        min_distance = opponent_unit_distances[0]
+        self._closest_enemy = opp_botpos[0]
         return min_distance < 7
 
     def _have_defender(self):
@@ -72,7 +69,7 @@ class FactoryBehaviour:
         # We need to assign bots to tasks first, then rebalance/assign new
 
         heavies = defaultdict(
-            list, {task: [robot for robot in robots if robot in self.manager.botposheavy] for task, robots in self.robots.items()}
+            list, {task: [robot for robot in robots if robot in self.map_state.botposheavy] for task, robots in self.robots.items()}
         )
 
         # At least one heavy should dig ice or factory will die (in the current approach with sequential task assigning)
@@ -95,9 +92,9 @@ class FactoryBehaviour:
 
         heavies = {}
         for x in all_factory_bots:
-            x_type = "HEAVY" if x in self.manager.botposheavy else "LIGHT"
+            x_type = "HEAVY" if x in self.map_state.botposheavy else "LIGHT"
             if x_type == preference:
-                heavies[x] = self.manager.botposheavy[x]
+                heavies[x] = self.map_state.botposheavy[x]
 
         if not heavies:
             return False

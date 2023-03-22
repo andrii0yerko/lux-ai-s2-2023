@@ -8,7 +8,8 @@ from lux.kit import obs_to_game_state, EnvConfig
 import numpy as np
 
 
-from .state_manager import StateManager
+from .task_manager import TaskManager
+from .map_manager import MapManager
 
 
 logger = logging.getLogger()
@@ -27,7 +28,7 @@ class Agent:
         np.random.seed(0)
         self.env_cfg: EnvConfig = env_cfg
 
-        self.manager = StateManager(self.player)
+        self.manager = TaskManager(self.player)
 
     def early_setup(self, step: int, obs, remainingOverageTime: int = 60):
         """
@@ -37,22 +38,22 @@ class Agent:
         game_state = obs_to_game_state(step, self.env_cfg, obs)
         return PlacementBehaviour(game_state, self.manager).act(step)
 
-    def _act_factories(self, game_state):
+    def _act_factories(self, game_state, map_state):
         actions = {}
         factories = game_state.factories[self.player]
 
         for unit_id, factory in factories.items():
             logger.info(f"{game_state.real_env_steps}, {unit_id}")
-            actions.update(FactoryBehaviour(factory, game_state, self.manager).act())
+            actions.update(FactoryBehaviour(factory, game_state, self.manager, map_state).act())
 
         return actions
 
-    def _act_robots(self, game_state):
+    def _act_robots(self, game_state, map_state):
         actions = {}
         units = game_state.units[self.player]
 
         for unit_id, unit in sorted(units.items()):
-            actions.update(UnitBehaviour(unit, game_state, self.manager).act())
+            actions.update(UnitBehaviour(unit, game_state, self.manager, map_state).act())
 
         return actions
 
@@ -64,13 +65,16 @@ class Agent:
 
         actions = dict()
         game_state = obs_to_game_state(step, self.env_cfg, obs)
-        self.manager.refresh(game_state)
+
+        map_state = MapManager(self.player, game_state)
+        # self.manager.map_state = map_state
+        self.manager.refresh(map_state)
 
         # build robots
-        actions.update(self._act_factories(game_state))
+        actions.update(self._act_factories(game_state, map_state))
 
         # move robots
-        actions.update(self._act_robots(game_state))
+        actions.update(self._act_robots(game_state, map_state))
 
         logger.info(f"{game_state.real_env_steps}, {actions}")
         return actions

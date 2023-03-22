@@ -1,10 +1,9 @@
-from collections import defaultdict
-from dataclasses import dataclass
 import logging
 import networkx as nx
 import numpy as np
 
 from lux.kit import GameState
+from lux.unit import move_deltas
 from lux.utils import direction_to
 
 
@@ -16,27 +15,12 @@ def get_3x3_indices(pos):
     return indices
 
 
-@dataclass
-class RobotTask:
-    task: str
-    action: str = None
+class MapManager:
 
-
-# TODO
-# This dict + id logic is a mess
-# Use classes and references instead.
-class StateManager:
-    move_deltas = np.array([[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0]])
-
-    def __init__(self, player) -> None:
+    def __init__(self, player, game_state) -> None:
         self.player = player
         self.opp_player = "player_1" if self.player == "player_0" else "player_0"
-
-        self.bots = {}
-        self.botpos = []
-        self.bot_factory = {}
-        self.bot_targets = {}
-        self.factory_queue = defaultdict(list)
+        self.refresh(game_state=game_state)
 
     def _build_graph(self, game_state):
         G = nx.DiGraph()
@@ -64,6 +48,32 @@ class StateManager:
                     G.add_edge(g1, g2, cost=20 + rubbles[g2])
         return G
 
+    def get_closest_factory(self, pos):
+        factory_distances = np.mean((self.factory_tiles - pos) ** 2, 1)
+        min_index = np.argmin(factory_distances)
+        closest_factory_tile = self.factory_tiles[min_index]
+        closest_factory_id = self.factory_ids[min_index]
+        return closest_factory_id, closest_factory_tile
+
+    def get_tiles_distances(self, pos, kind):
+        mapping = {
+            "ice": self.ice_locations,
+            "ore": self.ore_locations,
+            "rubble": self.rubble_locations,
+            "enemy": self.get_vulnerable_enemies(),
+        }
+        locations = mapping[kind]
+        if not len(locations):
+            return [], []
+
+        distances = np.mean((locations - pos) ** 2, 1)
+        idx = np.argsort(distances)
+        return locations[idx], distances[idx]
+
+    def get_vulnerable_enemies(self):
+        opp_botpos = np.array([xy for xy in self.opp_botpos if tuple(xy) not in self.enemy_factory_tiles])
+        return opp_botpos
+
     def shortest_path(self, pos_from, pos_to):
         path = np.array(nx.shortest_path(self._graph, source=tuple(pos_from), target=tuple(pos_to), weight="cost"))
         return [direction_to(a, b) for a, b in zip(path[:-1], path[1:])]
@@ -71,61 +81,12 @@ class StateManager:
     def check_collision(self, pos, direction, unit_type="LIGHT"):
         unitpos = set(self.botpos.values())
 
-        move_deltas = np.array([[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0]])
-
         new_pos = pos + move_deltas[direction]
 
         if unit_type == "LIGHT":
             return tuple(new_pos) in unitpos or tuple(new_pos) in self.botposheavy.values()
         else:
             return tuple(new_pos) in unitpos
-
-    def get_factory_bots(self, unit_id):
-        result = defaultdict(list)
-        for bot, factory in self.bot_factory.items():
-            if bot not in self.botpos.keys():
-                continue
-            if factory != unit_id:
-                continue
-            task = self.bots.get(bot)
-            result[task.task].append(bot)
-        return result
-
-    def register_bot(self, unit_id, unit):
-        """
-        assign bot to the closest factory
-        """
-        factory_tiles = self.factory_tiles
-        factory_ids = self.factory_ids
-        factories = self.factories
-
-        if unit_id not in self.bots.keys():
-            self.bots[unit_id] = ""
-
-        if unit_id not in self.bot_factory.keys():
-            factory_distances = np.mean((factory_tiles - unit.pos) ** 2, 1)
-            min_index = np.argmin(factory_distances)
-            closest_factory_tile = factory_tiles[min_index]
-            self.bot_factory[unit_id] = factory_ids[min_index]
-        elif self.bot_factory[unit_id] not in factory_ids:
-            factory_distances = np.mean((factory_tiles - unit.pos) ** 2, 1)
-            min_index = np.argmin(factory_distances)
-            closest_factory_tile = factory_tiles[min_index]
-            self.bot_factory[unit_id] = factory_ids[min_index]
-        else:
-            closest_factory_tile = factories[self.bot_factory[unit_id]].pos
-        return closest_factory_tile
-
-    def get_bot_task(self, unit_id):
-        if self.bots[unit_id] == "":
-            task = "ice"
-            logging.info("%s, assign new task, len queue %s", unit_id, len(self.factory_queue[self.bot_factory[unit_id]]))
-            if len(self.factory_queue[self.bot_factory[unit_id]]) != 0:
-                task = self.factory_queue[self.bot_factory[unit_id]].pop(0)
-            self.bots[unit_id] = RobotTask(task)
-            # self.factory_bots[self.bot_factory[unit_id]][task].append(unit_id)
-            # print(self.game_state.real_env_steps, unit_id, "new task", task)
-        return self.bots[unit_id]
 
     def refresh(self, game_state: GameState):
         self.enemy_factory_tiles = {
@@ -146,8 +107,6 @@ class StateManager:
 
                 if unit.unit_type == "HEAVY":
                     self.botposheavy[unit_id] = tuple(unit.pos)
-
-        self.bot_targets = {k: v for k, v in self.bot_targets.items() if k in self.botpos}
 
         factory_tiles = []
         # factory_units = []
