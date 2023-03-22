@@ -39,7 +39,7 @@ class StateManager:
         self.factory_queue = defaultdict(list)
 
     def _build_graph(self, game_state):
-        G = nx.Graph()
+        G = nx.DiGraph()
 
         def add_delta(a):
             return tuple(np.array(a[0]) + np.array(a[1]))
