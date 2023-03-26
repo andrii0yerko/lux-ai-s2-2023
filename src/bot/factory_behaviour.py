@@ -20,7 +20,7 @@ class FactoryBehaviour:
 
         logger = logging.getLogger(__class__.__name__)
         self.logger = BehaviourLoggingAdapter(logger, {"behaviour": self})
-        self.min_bots = {}
+        # self.min_bots = {}
 
     def _under_attack(self):
         opp_botpos, opponent_unit_distances = self.map_state.get_tiles_distances(self.factory.pos, "enemy", "l2")
@@ -37,8 +37,6 @@ class FactoryBehaviour:
         return True
 
     def _next_task(self):
-        minbot_task = None
-
         robots_num = Counter({task: len(robots) for task, robots in self.robots.items()})
         robots_num += Counter(self.manager.factory_queue[self.factory.unit_id])
 
@@ -46,6 +44,24 @@ class FactoryBehaviour:
         self.logger.info("queue %s", self.manager.factory_queue.get(self.factory.unit_id))
         self.logger.info("task count %s", robots_num)
 
+        if (
+            not robots_num["kill"]
+            and (robots_num["ice"] or self.factory.can_build_n(self.game_state, 2, "HEAVY"))
+            and self.factory.can_build_heavy(self.game_state)
+        ):
+            return "kill"
+        if not robots_num["ice"]:
+            return "ice"
+        if robots_num["ore"] < 3:
+            return "ore"
+        if robots_num["rubble"] < 5:
+            return "rubble"
+        return None
+
+    @property
+    def min_bots(self):
+        robots_num = Counter({task: len(robots) for task, robots in self.robots.items()})
+        robots_num += Counter(self.manager.factory_queue[self.factory.unit_id])
         queue_order = [
             ("kill", 1),
             ("ice", 1),
@@ -53,15 +69,12 @@ class FactoryBehaviour:
             ("rubble", 5),
         ]
 
-        self.min_bots = {}
+        min_bots = {}
         for task, desired_count in queue_order:
-            self.min_bots[task] = desired_count
+            min_bots[task] = desired_count
             if robots_num[task] < desired_count:
-                # minbots = num_bots
-                minbot_task = task
-                self.logger.info("minbottask %s, %s", minbot_task, self.min_bots[task])
                 break
-        return minbot_task
+        return min_bots
 
     def _rebalance_task(self):
         # TODO

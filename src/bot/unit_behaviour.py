@@ -102,6 +102,7 @@ class UnitBehaviour:
         return path
 
     def _move_to(self, sorted_alternatives):
+        self.logger.debug("move to %s -> %s", self.unit.pos, sorted_alternatives)
         unit = self.unit
         game_state = self.game_state
 
@@ -203,6 +204,28 @@ class UnitBehaviour:
         ):
             self._return_to_factory()
 
+    def _task_attack_lichen(self):
+        unit = self.unit
+        game_state = self.game_state
+        if (
+            unit.power
+            > unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.rubble_dig_cost
+        ):
+            sorted_ore = self.map_state.get_tiles_distances(unit.pos, "opponent_lichen")[0]
+            if (self.map_state.ore_locations == unit.pos).all(1).any():
+                if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
+                    self.actions = [unit.dig(repeat=False)]
+                    self.logger.info("opponent lichen reached, dig")
+            else:
+                self.logger.info("move to opponent lichen")
+                self._move_to(sorted_ore)
+
+        elif (
+            unit.cargo.ore >= self.cargo_space
+            or unit.power <= unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.def_move_cost * self.distance_to_factory
+        ):
+            self._return_to_factory()
+
     def _task_rubble(self):
         unit = self.unit
         game_state = self.game_state
@@ -239,7 +262,7 @@ class UnitBehaviour:
             min_distance = opponent_unit_distances[0]
             # FIXME it should be opp_pos[0], but because of bug in original code worked this way
             # investigate, and fix
-            pos_min_distance = self.map_state.get_vulnerable_enemies()[0]
+            pos_min_distance = opp_pos[0]  # self.map_state.get_vulnerable_enemies()[0]
 
             if min_distance == 1:
                 self.logger.info("РЕЗНЯ")
@@ -261,7 +284,6 @@ class UnitBehaviour:
         unit = self.unit
 
         self.logger.info(f"{self.unit} current action queue: {self.unit.action_queue}, task: {self.manager.bots.get(unit_id)}")
-        self.logger.info(f"botpos {self.map_state.botpos}")
 
         self.distance_to_factory = np.mean(np.subtract(self.closest_factory_tile, unit.pos) ** 2)
         self.adjacent_to_factory = self.distance_to_factory <= 1

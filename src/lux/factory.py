@@ -53,3 +53,9 @@ class Factory:
     @property
     def pos_slice(self):
         return slice(self.pos[0] - 1, self.pos[0] + 2), slice(self.pos[1] - 1, self.pos[1] + 2)
+
+    # __ADDED CODE BELOW__
+
+    def can_build_n(self, game_state, n=1, unit_type="HEAVY"):
+        unit_cfg = self.env_cfg.ROBOTS[unit_type]
+        return self.power >= n * unit_cfg.POWER_COST and self.cargo.metal >= n * unit_cfg.METAL_COST

@@ -66,8 +66,9 @@ class MapManager:
         mapping = {
             "ice": self.ice_locations,
             "ore": self.ore_locations,
-            "rubble": self.rubble_locations,
+            "rubble": np.vstack([self.rubble_locations.reshape(-1, 2), self.opponent_lichen_locations.reshape(-1, 2)]),
             "enemy": self.get_vulnerable_enemies(),
+            "opponent_lichen": self.opponent_lichen_locations,
         }
         locations = mapping[kind]
         if not len(locations):
@@ -145,3 +146,6 @@ class MapManager:
         self.ore_locations = ore_locations_all
         self.rubble_locations = rubble_locations_all
         self.rubble_map = rubble_map
+
+        opponent_strains = [x.strain_id for x in game_state.factories[self.opp_player].values()]
+        self.opponent_lichen_locations = np.isin(game_state.board.lichen_strains, opponent_strains)
