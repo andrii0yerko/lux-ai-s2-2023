@@ -57,18 +57,6 @@ class UnitBehaviour:
 
         self.actions = []
 
-    def assign_to_tile(self, possible_locations):
-        unit = self.unit
-        num_assigned = Counter(map(tuple, (v for k, v in self.manager.bot_targets.items() if k != unit.unit_id)))
-
-        distances = np.mean((possible_locations - unit.pos) ** 2, 1)
-        num_assigned = np.array([num_assigned.get(tuple(pos), 0) for pos in possible_locations])
-        # TODO adjust num_assigned depending of distance to _factory_
-
-        idx = np.argsort(distances + 2 * num_assigned)
-        self.manager.bot_targets[unit.unit_id] = possible_locations[idx][0]
-        return possible_locations[idx]
-
     def get_direction(self, unit, sorted_tiles) -> FoundPath:
         closest_tile = np.array(sorted_tiles[0])
         path = FoundPath(closest_tile, self.map_state.shortest_path(unit.pos, closest_tile))
@@ -111,19 +99,9 @@ class UnitBehaviour:
         # check move_cost is not None, meaning that direction is not blocked
         # check if unit has enough power to move and update the action queue.
         if move_cost is not None:  # and unit.power >= move_cost + unit.action_queue_cost(game_state):
-            cost = move_cost
-            if len(unit.action_queue) and (
-                (path.direction == unit.action_queue[0, 1] and unit.action_queue[0, 0] == 0)
-                # or (self.task in ["ice", "ore"] and not path.avoid_collisions)
-            ):
-                self.logger.info("continue queue")
-            else:
-                self.actions = [unit.move(d, repeat=False, n=len(list(gr))) for d, gr in itertools.groupby(path.directions)][:20]
-                cost += unit.action_queue_cost(game_state)
-                self.manager.bot_targets[self.unit_id] = path.target
-                self.logger.info(f"new queue {path.directions} {self.actions}")
-            if unit.power >= cost:
-                self.map_state.botpos[unit.unit_id] = tuple(np.array(unit.pos) + move_deltas[path.direction])
+            self.actions += [unit.move(d, repeat=False, n=len(list(gr))) for d, gr in itertools.groupby(path.directions)]
+            self.manager.bot_targets[self.unit_id] = path.target
+            self.logger.info(f"new movement queue {path.directions} {self.actions}")
 
     def _return_to_factory(self):
         """
@@ -133,23 +111,23 @@ class UnitBehaviour:
         # TODO: action sequences. Transfer ore or ice first depending on task and/or quantity
         """
         unit = self.unit
-        if self.adjacent_to_factory:
-            self.task.action = "continue"
-            if unit.cargo.ice > 0:
-                self.actions = [unit.transfer(0, 0, unit.cargo.ice, repeat=False)]
-                self.logger.info("transfer ice")
-            elif unit.cargo.ore > 0:
-                self.actions = [unit.transfer(0, 1, unit.cargo.ore, repeat=False)]
-                self.logger.info("transfer ore")
-            elif unit.power < self.battery_capacity * 0.1:
-                self.actions = [unit.pickup(4, self.battery_capacity - unit.power)]
-                self.logger.info("pickup power")
-        else:
+        if not self.adjacent_to_factory:
             self.task.action = "return"
             self.logger.info("move to factory")
             self._move_to([self.closest_factory_tile])
             if unit.unit_id in self.manager.bot_targets:
                 self.manager.bot_targets.pop(unit.unit_id)
+
+        self.task.action = "continue"
+        if unit.cargo.ice > 0:
+            self.actions += [unit.transfer(0, 0, unit.cargo.ice, repeat=False)]
+            self.logger.info("transfer ice")
+        elif unit.cargo.ore > 0:
+            self.actions += [unit.transfer(0, 1, unit.cargo.ore, repeat=False)]
+            self.logger.info("transfer ore")
+        elif unit.power < self.battery_capacity * 0.1:
+            self.actions += [unit.pickup(4, self.battery_capacity - unit.power)]
+            self.logger.info("pickup power")
 
     def _task_ice(self):
         unit = self.unit
@@ -165,14 +143,13 @@ class UnitBehaviour:
 
             sorted_ice = self.map_state.get_tiles_distances(unit.pos, "ice")[0]
             # if we have reached the ice tile, start mining if possible
-            if (self.map_state.ice_locations == unit.pos).all(1).any():
-                if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
-                    self.actions = [unit.dig(repeat=False)]
-                    self.logger.info("reached ice, dig")
-
-            else:
+            if not (sorted_ice == unit.pos).all(1).any():
                 self.logger.info("move to ice")
                 self._move_to(sorted_ice)
+                # if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
+            self.actions += [unit.dig(repeat=True)]
+            self.logger.info("reached ice, dig")
+
         elif (
             unit.cargo.ice >= self.cargo_space
             or unit.power <= unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.def_move_cost * self.distance_to_factory
@@ -190,13 +167,12 @@ class UnitBehaviour:
             # compute the distance to each ore tile from this unit and pick the closest
             sorted_ore = self.map_state.get_tiles_distances(unit.pos, "ore")[0]
             # if we have reached the ore tile, start mining if possible
-            if (self.map_state.ore_locations == unit.pos).all(1).any():
-                if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
-                    self.actions = [unit.dig(repeat=False)]
-                    self.logger.info("ore reached, dig")
-            else:
+            if not (sorted_ore == unit.pos).all(1).any():
                 self.logger.info("move to ore")
                 self._move_to(sorted_ore)
+                # if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
+            self.actions += [unit.dig(repeat=True)]
+            self.logger.info("ore reached, dig")
 
         elif (
             unit.cargo.ore >= self.cargo_space
@@ -207,18 +183,14 @@ class UnitBehaviour:
     def _task_attack_lichen(self):
         unit = self.unit
         game_state = self.game_state
-        if (
-            unit.power
-            > unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.rubble_dig_cost
-        ):
+        if unit.power > unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.rubble_dig_cost:
             sorted_ore = self.map_state.get_tiles_distances(unit.pos, "opponent_lichen")[0]
-            if (self.map_state.ore_locations == unit.pos).all(1).any():
-                if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
-                    self.actions = [unit.dig(repeat=False)]
-                    self.logger.info("opponent lichen reached, dig")
-            else:
+            if not (sorted_ore == unit.pos).all(1).any():
                 self.logger.info("move to opponent lichen")
                 self._move_to(sorted_ore)
+                # if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
+            self.actions += [unit.dig(repeat=True)]
+            self.logger.info("opponent lichen reached, dig")
 
         elif (
             unit.cargo.ore >= self.cargo_space
@@ -239,14 +211,12 @@ class UnitBehaviour:
 
             sorted_rubble = self.map_state.get_tiles_distances(unit.pos, "rubble")[0]
             # if we have reached the rubble tile, start mining if possible
-            if (self.map_state.rubble_locations == unit.pos).all(1).any():
-                if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
-                    self.actions = [unit.dig(repeat=False)]
-                    self.logger.info("rubble reached, dig")
-
-            else:
-                # there was a check than rubble exists, but i believe this in nonsence in the actual game setup
+            if not (sorted_rubble == unit.pos).all(1).any():
+                self.logger.info("move to rubble")
                 self._move_to(sorted_rubble)
+                # if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
+            self.actions += [unit.dig(repeat=True)]
+            self.logger.info("rubble reached, dig")
 
         elif unit.power <= unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.rubble_dig_cost:
             self._return_to_factory()
@@ -276,6 +246,26 @@ class UnitBehaviour:
         else:
             self._task_rubble()
 
+    def _should_continue_queue(self):
+        return (
+            len(self.unit.action_queue)
+            and len(self.actions)  # it will be empty, if unit is out of power
+            and np.all(self.unit.action_queue[0, :3] == self.actions[0][:3])
+        )
+
+    def _update_botpos(self, queue, is_new=False):
+        self.logger.info("_update_botpos %s", queue)
+        if queue[0][0] != 0:
+            return
+
+        direction = queue[0][1]
+        move_cost = self.unit.move_cost(self.game_state, direction)
+        if is_new:
+            move_cost += self.unit.action_queue_cost(self.game_state)
+
+        if self.unit.power >= move_cost:
+            self.map_state.botpos[self.unit.unit_id] = tuple(np.array(self.unit.pos) + move_deltas[direction])
+
     def act(self):
         # Assigning task for the bot
         actions = {}
@@ -303,6 +293,13 @@ class UnitBehaviour:
 
         task_method()
 
-        if self.actions:
+        if self._should_continue_queue():
+            self.logger.info("continue queue")
+            self._update_botpos(self.unit.action_queue)
+            actions = {}
+
+        elif self.actions:
             actions = {unit_id: self.actions[:20]}
+            self._update_botpos(self.actions, is_new=True)
+
         return actions
