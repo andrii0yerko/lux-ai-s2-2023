@@ -48,6 +48,8 @@ class MapManager:
         return G
 
     def shortest_path(self, pos_from, pos_to):
+        if np.all(pos_from == pos_to):
+            return [0]
         path = np.array(nx.shortest_path(self._graph, source=tuple(pos_from), target=tuple(pos_to), weight="cost"))
         return [direction_to(a, b) for a, b in zip(path[:-1], path[1:])]
 
@@ -148,4 +150,4 @@ class MapManager:
         self.rubble_map = rubble_map
 
         opponent_strains = [x.strain_id for x in game_state.factories[self.opp_player].values()]
-        self.opponent_lichen_locations = np.isin(game_state.board.lichen_strains, opponent_strains)
+        self.opponent_lichen_locations = np.argwhere(np.isin(game_state.board.lichen_strains, opponent_strains))
