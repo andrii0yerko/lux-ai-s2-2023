@@ -75,8 +75,8 @@ class PlacementBehaviour:
             #                 spawn_loc = potential_spawns[np.random.randint(0, len(potential_spawns))]
             spawn_loc = best_loc
             actions["spawn"] = spawn_loc
-            actions["metal"] = min(300, metal_left) if factories_to_place > 1 else metal_left
-            actions["water"] = min(300, water_left) if factories_to_place > 1 else water_left
+            actions["metal"] = min(150, metal_left) if factories_to_place > 1 else metal_left
+            actions["water"] = min(150, water_left) if factories_to_place > 1 else water_left
         return actions
 
     def act(self, step):

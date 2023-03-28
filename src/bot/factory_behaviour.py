@@ -44,16 +44,16 @@ class FactoryBehaviour:
         self.logger.info("queue %s", self.manager.factory_queue.get(self.factory.unit_id))
         self.logger.info("task count %s", robots_num)
 
-        if (
-            not robots_num["kill"]
-            and (robots_num["ice"] or self.factory.can_build_n(self.game_state, 2, "HEAVY"))
-            and self.factory.can_build_heavy(self.game_state)
-        ):
-            return "kill"
+        # if (
+        #     not robots_num["kill"]
+        #     and (robots_num["ice"] or self.factory.can_build_n(self.game_state, 2, "HEAVY"))
+        #     and self.factory.can_build_heavy(self.game_state)
+        # ):
+        #     return "kill"
         if not robots_num["ice"]:
             return "ice"
-        if robots_num["ore"] < 3:
-            return "ore"
+        # if robots_num["ore"] < 3:
+        #     return "ore"
         if robots_num["rubble"] < 5:
             return "rubble"
         return None
@@ -63,9 +63,9 @@ class FactoryBehaviour:
         robots_num = Counter({task: len(robots) for task, robots in self.robots.items()})
         robots_num += Counter(self.manager.factory_queue[self.factory.unit_id])
         queue_order = [
-            ("kill", 1),
+            # ("kill", 1),
             ("ice", 1),
-            ("ore", 3),
+            # ("ore", 3),
             ("rubble", 5),
         ]
 
@@ -134,6 +134,9 @@ class FactoryBehaviour:
             else:
                 self.manager.bots[x] = RobotTask("rubble")
 
+    def _lichen_tiles_count(self):
+        return np.sum(self.game_state.board.lichen_strains == self.factory.strain_id)
+
     def act(self):
         actions = {}
         unit_id = self.factory.unit_id
@@ -176,6 +179,9 @@ class FactoryBehaviour:
                 elif factory.can_build_heavy(game_state):
                     actions = {unit_id: factory.build_heavy()}
                     self.manager.factory_queue[unit_id].append(self.next_bot_task)
+
+        # if not actions and factory.cargo.water > 100 and factory.power < 1000 and self._lichen_tiles_count() < 20:
+        #     actions = {unit_id: factory.water()}
 
         step = game_state.real_env_steps
         if factory.can_water(game_state) and step > 800 and factory.cargo.water > (1000 - step) + 100:
