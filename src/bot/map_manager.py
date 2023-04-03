@@ -65,8 +65,13 @@ class MapManager:
         return closest_factory_id, closest_factory_tile
 
     def get_vulnerable_enemies(self):
-        opp_botpos = np.array([xy for xy in self.opp_botpos if tuple(xy) not in self.enemy_factory_tiles])
+        opp_botpos = np.array([xy for xy in self.opp_botpos.values() if tuple(xy) not in self.enemy_factory_tiles])
         return opp_botpos
+
+    def get_robot_by_pos(self, pos):
+        for unit in self.game_state.units[self.opp_player].values():
+            if np.all(np.equal(pos, unit.pos)):
+                return unit
 
     def get_tiles_to_clean(self):
         rubble = np.vstack([self.rubble_locations.reshape(-1, 2), self.opponent_lichen_locations.reshape(-1, 2)])
@@ -87,7 +92,7 @@ class MapManager:
             return [], []
 
         if distance == "l1":
-            distances = np.mean(np.abs(locations - pos), 1)
+            distances = np.sum(np.abs(locations - pos), 1)
         elif distance == "l2":
             distances = np.mean((locations - pos) ** 2, 1)
         elif distance == "cost":  # too expensive to compute
@@ -106,6 +111,7 @@ class MapManager:
             return tuple(new_pos) in unitpos
 
     def refresh(self, game_state: GameState):
+        self.game_state = game_state
         self.enemy_factory_tiles = {
             tuple(xy) for factory in game_state.factories[self.opp_player].values() for xy in get_3x3_indices(factory.pos).tolist()
         }
@@ -114,13 +120,13 @@ class MapManager:
         # Unit locations
         self.botpos = {}
         self.botposheavy = {}
-        self.opp_botpos = []
+        self.opp_botpos = {}
         for player in [self.player, self.opp_player]:
             for unit_id, unit in game_state.units[player].items():
                 if player == self.player:
                     self.botpos[unit_id] = tuple(unit.pos)
                 else:
-                    self.opp_botpos.append(unit.pos)
+                    self.opp_botpos[unit_id] = tuple(unit.pos)
 
                 if unit.unit_type == "HEAVY":
                     self.botposheavy[unit_id] = tuple(unit.pos)

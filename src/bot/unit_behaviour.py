@@ -10,6 +10,7 @@ from bot.task_manager import TaskManager
 from bot.map_manager import MapManager
 from lux.kit import GameState
 from lux.unit import Unit, move_deltas
+from lux.utils import direction_to
 
 
 class FoundPath(NamedTuple):
@@ -221,6 +222,45 @@ class UnitBehaviour:
         elif unit.power <= unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.rubble_dig_cost:
             self._return_to_factory()
 
+    def _can_destroy_enemy(self, enemy):
+        self.logger.debug("_can_destroy_enemy %s vs %s", self.unit.pos, enemy.pos)
+        unit = self.unit
+
+        if unit.unit_type == "LIGHT" and enemy.unit_type == "HEAVY":
+            return True
+        if unit.unit_type == "HEAVY" and enemy.unit_type == "LIGHT":
+            True
+
+        path = self.map_state.shortest_path(unit.pos, enemy.pos)
+        move_cost = self.map_state.shortest_path_cost(unit.pos, enemy.pos)
+        move_cost = (move_cost / 20) if unit.unit_type == "LIGHT" else move_cost
+
+        new_queue = self._should_continue_queue([unit.move(path[0])])
+        queue_cost = 0 if new_queue else unit.action_queue_cost(self.game_state)
+        return unit.power + queue_cost + move_cost > enemy.power
+
+    def _enemy_is_near(self):
+        unit = self.unit
+
+        opp_pos, opponent_unit_distances = self.map_state.get_tiles_distances(unit.pos, "enemy")
+
+        if len(opp_pos) != 0:
+            min_distance = opponent_unit_distances[0]
+            pos_min_distance = opp_pos[0]
+
+            closest_enemy = self.map_state.get_robot_by_pos(pos_min_distance)
+
+            if min_distance <= 2:
+                if self._can_destroy_enemy(closest_enemy):
+                    self.logger.info("РЕЗНЯ")
+                    self._move_to([pos_min_distance])
+                else:
+                    self.logger.info("step back")
+                    adjacent_tiles = self.unit.adjacent_tiles()
+                    dist = np.sum(np.abs(adjacent_tiles - pos_min_distance), 1)
+                    candidates = adjacent_tiles[np.argsort(dist)][:-1]
+                    self._move_to(candidates)
+
     def _task_kill(self):
         # TODO: attack lichen
         unit = self.unit
@@ -230,13 +270,21 @@ class UnitBehaviour:
 
         if len(opp_pos) != 0:
             min_distance = opponent_unit_distances[0]
-            # FIXME it should be opp_pos[0], but because of bug in original code worked this way
-            # investigate, and fix
-            pos_min_distance = opp_pos[0]  # self.map_state.get_vulnerable_enemies()[0]
+            pos_min_distance = opp_pos[0]
 
-            if min_distance == 1:
-                self.logger.info("РЕЗНЯ")
-                self._move_to([pos_min_distance])
+            closest_enemy = self.map_state.get_robot_by_pos(pos_min_distance)
+
+            if min_distance <= 2:
+                if self._can_destroy_enemy(closest_enemy):
+                    self.logger.info("РЕЗНЯ")
+                    self._move_to([pos_min_distance])
+                else:
+                    self.logger.info("step back")
+                    adjacent_tiles = self.unit.adjacent_tiles()
+                    dist = np.sum(np.abs(adjacent_tiles - pos_min_distance), 1)
+                    candidates = adjacent_tiles[np.argsort(dist)][:-1]
+                    self._move_to(candidates)
+
             else:
                 if unit.power > unit.action_queue_cost(game_state):
                     self.logger.info("move for attack")
@@ -246,11 +294,11 @@ class UnitBehaviour:
         else:
             self._task_rubble()
 
-    def _should_continue_queue(self):
+    def _should_continue_queue(self, actions):
         return (
             len(self.unit.action_queue)
-            and len(self.actions)  # it will be empty, if unit is out of power
-            and np.all(self.unit.action_queue[0, :3] == self.actions[0][:3])
+            and len(actions)  # it will be empty, if unit is out of power
+            and np.all(self.unit.action_queue[0, :3] == actions[0][:3])
         )
 
     def _update_botpos(self, queue, is_new=False):
@@ -291,9 +339,11 @@ class UnitBehaviour:
             "defend": self._task_kill,
         }[self.task.task]
 
+        if task_method != self._task_kill:
+            self._enemy_is_near()
         task_method()
 
-        if self._should_continue_queue():
+        if self._should_continue_queue(self.actions):
             self.logger.info("continue queue")
             self._update_botpos(self.unit.action_queue)
             actions = {}
