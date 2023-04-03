@@ -64,11 +64,21 @@ class MapManager:
         closest_factory_id = self.factory_ids[min_index]
         return closest_factory_id, closest_factory_tile
 
+    def get_vulnerable_enemies(self):
+        opp_botpos = np.array([xy for xy in self.opp_botpos if tuple(xy) not in self.enemy_factory_tiles])
+        return opp_botpos
+
+    def get_tiles_to_clean(self):
+        rubble = np.vstack([self.rubble_locations.reshape(-1, 2), self.opponent_lichen_locations.reshape(-1, 2)])
+        resources = np.vstack([self.ice_locations, self.ore_locations])
+        mask = ~(rubble[:, None] == resources).all(axis=2).any(axis=1)
+        return rubble[mask]
+
     def get_tiles_distances(self, pos, kind, distance="l1"):
         mapping = {
             "ice": self.ice_locations,
             "ore": self.ore_locations,
-            "rubble": np.vstack([self.rubble_locations.reshape(-1, 2), self.opponent_lichen_locations.reshape(-1, 2)]),
+            "rubble": self.get_tiles_to_clean(),
             "enemy": self.get_vulnerable_enemies(),
             "opponent_lichen": self.opponent_lichen_locations,
         }
@@ -84,10 +94,6 @@ class MapManager:
             distances = np.array([self.shortest_path_cost(pos, loc) for loc in locations])
         idx = np.argsort(distances)
         return locations[idx], distances[idx]
-
-    def get_vulnerable_enemies(self):
-        opp_botpos = np.array([xy for xy in self.opp_botpos if tuple(xy) not in self.enemy_factory_tiles])
-        return opp_botpos
 
     def check_collision(self, pos, direction, unit_type="LIGHT"):
         unitpos = set(self.botpos.values())
