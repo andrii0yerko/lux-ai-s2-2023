@@ -2,6 +2,8 @@ import logging
 import networkx as nx
 import numpy as np
 
+from scipy.ndimage import binary_dilation
+
 from lux.kit import GameState
 from lux.unit import move_deltas
 from lux.utils import direction_to
@@ -73,9 +75,23 @@ class MapManager:
             if np.all(np.equal(pos, unit.pos)):
                 return unit
 
+    def get_enemy_lichen_borders(self):
+        opponent_strains = [x.strain_id for x in self.game_state.factories[self.opp_player].values()]
+        opponent_lichen = np.isin(self.game_state.board.lichen_strains, opponent_strains)
+        struct = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]])
+        # Dilate the nonzero elements
+        dilated = binary_dilation(opponent_lichen, structure=struct).astype(int)
+
+        # Subtract the original nonzero elements from the dilated elements
+        border = dilated - opponent_lichen
+        return np.argwhere(border)
+
     def get_tiles_to_clean(self):
         rubble = np.vstack([self.rubble_locations.reshape(-1, 2), self.opponent_lichen_locations.reshape(-1, 2)])
-        resources = np.vstack([self.ice_locations, self.ore_locations])
+
+        enemy_borders = self.get_enemy_lichen_borders()
+
+        resources = np.vstack([self.ice_locations, self.ore_locations, enemy_borders])
         mask = ~(rubble[:, None] == resources).all(axis=2).any(axis=1)
         return rubble[mask]
 
@@ -83,7 +99,7 @@ class MapManager:
         mapping = {
             "ice": self.ice_locations,
             "ore": self.ore_locations,
-            "rubble": self.get_tiles_to_clean(),
+            "rubble": self.tiles_to_clean,
             "enemy": self.get_vulnerable_enemies(),
             "opponent_lichen": self.opponent_lichen_locations,
         }
@@ -163,3 +179,5 @@ class MapManager:
 
         opponent_strains = [x.strain_id for x in game_state.factories[self.opp_player].values()]
         self.opponent_lichen_locations = np.argwhere(np.isin(game_state.board.lichen_strains, opponent_strains))
+
+        self.tiles_to_clean = self.get_tiles_to_clean()
