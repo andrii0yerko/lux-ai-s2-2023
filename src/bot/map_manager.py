@@ -100,7 +100,7 @@ class MapManager:
             "ice": self.ice_locations,
             "ore": self.ore_locations,
             "rubble": self.tiles_to_clean,
-            "enemy": self.get_vulnerable_enemies(),
+            "enemy": self.vulnerable_enemies,
             "opponent_lichen": self.opponent_lichen_locations,
         }
         locations = mapping[kind]
@@ -181,3 +181,4 @@ class MapManager:
         self.opponent_lichen_locations = np.argwhere(np.isin(game_state.board.lichen_strains, opponent_strains))
 
         self.tiles_to_clean = self.get_tiles_to_clean()
+        self.vulnerable_enemies = self.get_vulnerable_enemies()
