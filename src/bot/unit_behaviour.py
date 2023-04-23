@@ -199,6 +199,30 @@ class UnitBehaviour:
         ):
             self._return_to_factory()
 
+    def _task_protect_border(self):
+        unit = self.unit
+        # game_state = self.game_state
+        # if (
+        #     unit.cargo.ore < self.cargo_space
+        #     and unit.power > unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.def_move_cost * self.distance_to_factory
+        #     # and self.task.action != "return"
+        # ):
+        # compute the distance to each ore tile from this unit and pick the closest
+        sorted_tiles = self.map_state.get_tiles_distances(unit.pos, "factory_border")[0]
+        # if we have reached the ore tile, start mining if possible
+        if not (sorted_tiles == unit.pos).all(1).any():
+            self.logger.info("move to border")
+            self._move_to(sorted_tiles)
+            # if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
+        self.actions += []
+        self.logger.info("border reached, wait")
+
+        # elif (
+        #     unit.cargo.ore >= self.cargo_space
+        #     or unit.power <= unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.def_move_cost * self.distance_to_factory
+        # ):
+        #     self._return_to_factory()
+
     def _task_rubble(self):
         unit = self.unit
         game_state = self.game_state
@@ -211,13 +235,17 @@ class UnitBehaviour:
             # compute the distance to each rubble tile from this unit and pick the closest
 
             sorted_rubble = self.map_state.get_tiles_distances(unit.pos, "rubble")[0]
-            # if we have reached the rubble tile, start mining if possible
-            if not (sorted_rubble == unit.pos).all(1).any():
-                self.logger.info("move to rubble")
-                self._move_to(sorted_rubble)
-                # if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
-            self.actions += [unit.dig(repeat=True)]
-            self.logger.info("rubble reached, dig")
+            if len(sorted_rubble):
+                # if we have reached the rubble tile, start mining if possible
+                if not (sorted_rubble == unit.pos).all(1).any():
+                    self.logger.info("move to rubble")
+                    self._move_to(sorted_rubble)
+                    # if unit.power >= unit.dig_cost(game_state) + unit.action_queue_cost(game_state):
+                self.actions += [unit.dig(repeat=True)]
+                self.logger.info("rubble reached, dig")
+            else:
+                self.logger.info("no tiles to dig")
+                self._task_protect_border()
 
         elif unit.power <= unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.rubble_dig_cost:
             self._return_to_factory()

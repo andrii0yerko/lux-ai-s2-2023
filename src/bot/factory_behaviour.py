@@ -20,7 +20,6 @@ class FactoryBehaviour:
 
         logger = logging.getLogger(__class__.__name__)
         self.logger = BehaviourLoggingAdapter(logger, {"behaviour": self})
-        # self.min_bots = {}
 
     def _under_attack(self):
         opp_botpos, opponent_unit_distances = self.map_state.get_tiles_distances(self.factory.pos, "enemy", "l2")

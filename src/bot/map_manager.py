@@ -3,6 +3,7 @@ import networkx as nx
 import numpy as np
 
 from scipy.ndimage import binary_dilation
+from scipy.spatial.distance import cdist
 
 from lux.kit import GameState
 from lux.unit import move_deltas
@@ -75,8 +76,8 @@ class MapManager:
             if np.all(np.equal(pos, unit.pos)):
                 return unit
 
-    def get_enemy_lichen_borders(self):
-        opponent_strains = [x.strain_id for x in self.game_state.factories[self.opp_player].values()]
+    def get_lichen_borders(self, player):
+        opponent_strains = [x.strain_id for x in self.game_state.factories[player].values()]
         opponent_lichen = np.isin(self.game_state.board.lichen_strains, opponent_strains)
         struct = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]])
         # Dilate the nonzero elements
@@ -87,13 +88,31 @@ class MapManager:
         return np.argwhere(border)
 
     def get_tiles_to_clean(self):
-        rubble = np.vstack([self.rubble_locations.reshape(-1, 2), self.opponent_lichen_locations.reshape(-1, 2)])
+        lichen_borders = self.get_lichen_borders(self.player)
 
-        enemy_borders = self.get_enemy_lichen_borders()
+        rubble_locations = self.rubble_locations.reshape(-1, 2)
+        mask = cdist(self.factory_tiles, rubble_locations, "cityblock").min(axis=0) < 9
+        mask_border = (rubble_locations[:, None] == lichen_borders).all(axis=2).any(axis=1)
+
+        rubble_locations = self.rubble_locations.reshape(-1, 2)[mask | mask_border]
+
+        rubble = np.vstack([rubble_locations, self.opponent_lichen_locations.reshape(-1, 2)])
+
+        enemy_borders = self.get_lichen_borders(self.opp_player)
 
         resources = np.vstack([self.ice_locations, self.ore_locations, enemy_borders])
         mask = ~(rubble[:, None] == resources).all(axis=2).any(axis=1)
         return rubble[mask]
+
+    def get_factories_neigborhood(self, dist):
+        map_size = self.game_state.env_cfg.map_size
+        x, y = np.meshgrid(np.arange(map_size), np.arange(map_size))
+        points = np.column_stack((x.ravel(), y.ravel()))
+
+        factory_array = np.array(self.factory_tiles)
+        distances = cdist(points, factory_array, 'cityblock')
+        is_near_factory = np.any(distances == dist, axis=1)
+        return points[is_near_factory]
 
     def get_tiles_distances(self, pos, kind, distance="l1"):
         mapping = {
@@ -102,6 +121,7 @@ class MapManager:
             "rubble": self.tiles_to_clean,
             "enemy": self.vulnerable_enemies,
             "opponent_lichen": self.opponent_lichen_locations,
+            "factory_border": self.factories_neigborhood
         }
         locations = mapping[kind]
         if not len(locations):
@@ -182,3 +202,4 @@ class MapManager:
 
         self.tiles_to_clean = self.get_tiles_to_clean()
         self.vulnerable_enemies = self.get_vulnerable_enemies()
+        self.factories_neigborhood = self.get_factories_neigborhood(7)
