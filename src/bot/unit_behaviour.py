@@ -134,10 +134,12 @@ class UnitBehaviour:
         unit = self.unit
         game_state = self.game_state
 
+        factory_needs_ice = (self.factory.cargo.water <= (10 if self.game_state.is_day() else 20) and unit.cargo.ice)
+
         if (
             unit.cargo.ice < self.cargo_space
             and unit.power > unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.def_move_cost * self.distance_to_factory
-            and not (self.factory.cargo.water <= (10 if self.game_state.is_day() else 20) and unit.cargo.ice)
+            and not factory_needs_ice
             # and self.task.action != "return"
         ):
             # compute the distance to each ice tile from this unit and pick the closest
@@ -154,6 +156,7 @@ class UnitBehaviour:
         elif (
             unit.cargo.ice >= self.cargo_space
             or unit.power <= unit.action_queue_cost(game_state) + unit.dig_cost(game_state) + self.def_move_cost * self.distance_to_factory
+            or factory_needs_ice
         ):
             self._return_to_factory()
 
