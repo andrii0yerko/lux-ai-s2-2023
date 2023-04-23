@@ -84,5 +84,5 @@ class Unit:
     # __ADDED CODE BELOW__
     def adjacent_tiles(self):
         tiles = self.pos + move_deltas[1:]
-        tiles[((tiles < 0) | (tiles >= 48)).any(axis=1)]
+        tiles = tiles[~((tiles < 0) | (tiles >= 48)).any(axis=1)]
         return tiles

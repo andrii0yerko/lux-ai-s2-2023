@@ -91,7 +91,7 @@ class UnitBehaviour:
         return path
 
     def _move_to(self, sorted_alternatives):
-        self.logger.debug("move to %s -> %s", self.unit.pos, sorted_alternatives)
+        # self.logger.debug("move to %s -> %s", self.unit.pos, sorted_alternatives)
         unit = self.unit
         game_state = self.game_state
 
@@ -255,9 +255,9 @@ class UnitBehaviour:
         unit = self.unit
 
         if unit.unit_type == "LIGHT" and enemy.unit_type == "HEAVY":
-            return True
+            return False
         if unit.unit_type == "HEAVY" and enemy.unit_type == "LIGHT":
-            True
+            return True
 
         path = self.map_state.shortest_path(unit.pos, enemy.pos)
         move_cost = self.map_state.shortest_path_cost(unit.pos, enemy.pos)
@@ -265,7 +265,29 @@ class UnitBehaviour:
 
         new_queue = self._should_continue_queue([unit.move(path[0])])
         queue_cost = 0 if new_queue else unit.action_queue_cost(self.game_state)
-        return unit.power + queue_cost + move_cost > enemy.power
+        return unit.power - queue_cost - move_cost > enemy.power
+
+    def _fight(self, pos_min_distance, min_distance):
+        closest_enemy = self.map_state.get_robot_by_pos(pos_min_distance)
+
+        if min_distance <= 2:
+            if self._can_destroy_enemy(closest_enemy):
+                self.logger.info("РЕЗНЯ")
+                self._move_to([pos_min_distance])
+            elif not self.adjacent_to_factory:
+                self.logger.info("step back")
+                adjacent_tiles = self.unit.adjacent_tiles()
+                dist_enemy = np.sum(np.abs(adjacent_tiles - pos_min_distance), 1)
+                dist_factory = np.sum(np.abs(adjacent_tiles - self.closest_factory_tile), 1)
+                dist = 2 * dist_enemy - dist_factory
+
+                candidates = adjacent_tiles[np.argsort(dist)][::-1]
+                self.logger.info(f"candidates: {candidates}", )
+                self._move_to(candidates)
+            else:
+                self._return_to_factory()
+            return True
+        return False
 
     def _enemy_is_near(self):
         unit = self.unit
@@ -275,19 +297,7 @@ class UnitBehaviour:
         if len(opp_pos) != 0:
             min_distance = opponent_unit_distances[0]
             pos_min_distance = opp_pos[0]
-
-            closest_enemy = self.map_state.get_robot_by_pos(pos_min_distance)
-
-            if min_distance <= 2:
-                if self._can_destroy_enemy(closest_enemy):
-                    self.logger.info("РЕЗНЯ")
-                    self._move_to([pos_min_distance])
-                else:
-                    self.logger.info("step back")
-                    adjacent_tiles = self.unit.adjacent_tiles()
-                    dist = np.sum(np.abs(adjacent_tiles - pos_min_distance), 1)
-                    candidates = adjacent_tiles[np.argsort(dist)][:-1]
-                    self._move_to(candidates)
+            self._fight(pos_min_distance, min_distance)
 
     def _task_kill(self):
         # TODO: attack lichen
@@ -300,18 +310,8 @@ class UnitBehaviour:
             min_distance = opponent_unit_distances[0]
             pos_min_distance = opp_pos[0]
 
-            closest_enemy = self.map_state.get_robot_by_pos(pos_min_distance)
-
-            if min_distance <= 2:
-                if self._can_destroy_enemy(closest_enemy):
-                    self.logger.info("РЕЗНЯ")
-                    self._move_to([pos_min_distance])
-                else:
-                    self.logger.info("step back")
-                    adjacent_tiles = self.unit.adjacent_tiles()
-                    dist = np.sum(np.abs(adjacent_tiles - pos_min_distance), 1)
-                    candidates = adjacent_tiles[np.argsort(dist)][:-1]
-                    self._move_to(candidates)
+            if self._fight(pos_min_distance, min_distance):
+                pass
 
             else:
                 if unit.power > unit.action_queue_cost(game_state):
