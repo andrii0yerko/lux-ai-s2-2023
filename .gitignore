@@ -170,3 +170,4 @@ replays
 replays/**
 result.csv
 __pycache__/**
+bot_copies/tmp/
